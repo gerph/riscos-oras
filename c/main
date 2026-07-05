@@ -68,6 +68,108 @@ static void print_usage(void)
     printf("  *oras --self-test\n");
 }
 
+static const char *skip_space(const char *text)
+{
+    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n')
+    {
+        ++text;
+    }
+    return text;
+}
+
+static const char *find_tags_array(const char *json)
+{
+    const char *scan;
+
+    scan = json;
+    while ((scan = strstr(scan, "\"tags\"")) != NULL)
+    {
+        scan += 6;
+        scan = skip_space(scan);
+        if (*scan != ':')
+        {
+            continue;
+        }
+        ++scan;
+        scan = skip_space(scan);
+        if (*scan == '[')
+        {
+            return scan + 1;
+        }
+    }
+    return NULL;
+}
+
+static int print_tags_fast(const char *json)
+{
+    const char *scan;
+    const char *start;
+    int done;
+
+    scan = find_tags_array(json);
+    if (scan == NULL)
+    {
+        return 0;
+    }
+
+    done = 0;
+    for (;;)
+    {
+        scan = skip_space(scan);
+        if (*scan == ']')
+        {
+            return 1;
+        }
+        if (*scan != '"')
+        {
+            return 0;
+        }
+        ++scan;
+        start = scan;
+        while (*scan != '\0')
+        {
+            if (*scan == '\\' && scan[1] != '\0')
+            {
+                scan += 2;
+                continue;
+            }
+            if (*scan == '"')
+            {
+                fwrite(start, 1, (size_t)(scan - start), stdout);
+                putchar('\n');
+                ++scan;
+                scan = skip_space(scan);
+                if (*scan == ',')
+                {
+                    ++scan;
+                    done = 1;
+                    break;
+                }
+                if (*scan == ']')
+                {
+                    return 1;
+                }
+                return 0;
+            }
+            ++scan;
+        }
+        if (done)
+        {
+            done = 0;
+            continue;
+        }
+        return 0;
+    }
+}
+
+static void print_tags(const char *json)
+{
+    if (!print_tags_fast(json))
+    {
+        printf("%s\n", json);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     char error[256];
@@ -125,7 +227,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
-        printf("%s\n", json);
+        print_tags(json);
         free(json);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);

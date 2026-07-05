@@ -217,6 +217,7 @@ int url_fetch_execute(const url_fetch_request_t *request,
     size_t raw_allocated;
     char *request_block;
     size_t request_block_length;
+    int bytes_remaining;
 
     memset(response, 0, sizeof(*response));
     method = method_number(request->method);
@@ -260,6 +261,7 @@ int url_fetch_execute(const url_fetch_request_t *request,
     raw_used = 0;
     raw_allocated = 0;
     status = 0;
+    bytes_remaining = -1;
     do
     {
         memset(&regs, 0, sizeof(regs));
@@ -275,6 +277,7 @@ int url_fetch_execute(const url_fetch_request_t *request,
             goto fail;
         }
         status = (unsigned long)regs.r[0];
+        bytes_remaining = regs.r[5];
         if (regs.r[4] > 0)
         {
             if (!append_bytes(&raw, &raw_used, &raw_allocated,
@@ -288,7 +291,9 @@ int url_fetch_execute(const url_fetch_request_t *request,
         {
             os_swi1(0x0000016B, 1);
         }
-    } while ((status & URL_Status_Complete) == 0);
+    } while ((status & URL_Status_Complete) == 0 ||
+             regs.r[4] > 0 ||
+             bytes_remaining > 0);
 
     memset(&regs, 0, sizeof(regs));
     regs.r[0] = 0;

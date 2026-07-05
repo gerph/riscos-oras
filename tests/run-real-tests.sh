@@ -37,7 +37,7 @@ run_oras() {
 }
 
 run_oras_text() {
-    run_oras "$@" | perl -pe 's/\e\[[0-9;]*m//g'
+    run_oras "$@" | perl -pe 's/\e\[[0-9;]*m//g; s/\r$//'
 }
 
 run_oras_blob_to_file() {
@@ -64,7 +64,7 @@ cmp "fixture-blob.bin" <(printf 'fixture pull data\n')
 
 echo "-- tags against fixture repository"
 run_oras_text tags "localhost:$PORT/demo/pull" >"tags.json"
-grep -q '"latest"' "tags.json"
+grep -qx 'latest' "tags.json"
 
 echo "-- pull fixture fileset"
 mkdir -p "pulled"
@@ -81,7 +81,7 @@ grep -q 'push-source,fff' "pushed-manifest.json"
 
 echo "-- tags against pushed repository"
 run_oras_text tags "localhost:$PORT/demo/push" >"push-tags.json"
-grep -q '"latest"' "push-tags.json"
+grep -qx 'latest' "push-tags.json"
 
 echo "-- pull pushed fileset"
 mkdir -p "pulled-push"
