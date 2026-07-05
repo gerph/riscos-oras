@@ -56,6 +56,10 @@ include LibraryCommand
 test: all
 	riscos-build-run aif32/oras,ff8 --command "oras --self-test"
 
+.PHONY: realtest
+realtest: all
+	tests/run-real-tests.sh
+
 
 #---------------------------------------------------------------------------
 # Dynamic dependencies:

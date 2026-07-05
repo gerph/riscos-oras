@@ -224,6 +224,8 @@ static void test_fileset_plan_and_extract(void)
         EXPECT(count == sizeof(text_data) - 1, "extracted file size");
         EXPECT(memcmp(buffer, text_data, sizeof(text_data) - 1) == 0, "extracted file bytes");
     }
+    remove("TestOras.Input.readme,fff");
+    remove("TestOras.Output.readme,fff");
     oras_free_manifest(&manifest);
     riscos_fileset_free_entries(entries, entry_count);
 }

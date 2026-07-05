@@ -40,15 +40,19 @@ static char *build_url(const oci_reference_t *reference,
 {
     size_t length;
     char *url;
+    const char *scheme;
 
+    scheme = (strncmp(reference->registry, "localhost", 9) == 0 ||
+              strncmp(reference->registry, "127.0.0.1", 9) == 0) ?
+             "http" : "https";
     length = strlen(reference->registry) + strlen(reference->repository) +
-             strlen(suffix) + 16;
+             strlen(suffix) + strlen(scheme) + 8;
     url = malloc(length);
     if (url == NULL)
     {
         return NULL;
     }
-    sprintf(url, "https://%s/v2/%s%s", reference->registry, reference->repository, suffix);
+    sprintf(url, "%s://%s/v2/%s%s", scheme, reference->registry, reference->repository, suffix);
     return url;
 }
 
@@ -114,19 +118,23 @@ static char *resolve_location(const oci_reference_t *reference,
                               const char *location)
 {
     char *resolved;
+    const char *scheme;
 
     if (strncmp(location, "http://", 7) == 0 || strncmp(location, "https://", 8) == 0)
     {
         return oras_strdup(location);
     }
+    scheme = (strncmp(reference->registry, "localhost", 9) == 0 ||
+              strncmp(reference->registry, "127.0.0.1", 9) == 0) ?
+             "http" : "https";
     if (location[0] == '/')
     {
-        resolved = malloc(strlen(reference->registry) + strlen(location) + 9);
+        resolved = malloc(strlen(reference->registry) + strlen(location) + strlen(scheme) + 4);
         if (resolved == NULL)
         {
             return NULL;
         }
-        sprintf(resolved, "https://%s%s", reference->registry, location);
+        sprintf(resolved, "%s://%s%s", scheme, reference->registry, location);
         return resolved;
     }
     return build_url(reference, location);
