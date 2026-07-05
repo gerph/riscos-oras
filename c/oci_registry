@@ -35,6 +35,26 @@ static int equal_casefold(const char *left, const char *right)
     return *left == '\0' && *right == '\0';
 }
 
+static int is_docker_hub_registry(const oci_reference_t *reference)
+{
+    return strcmp(reference->registry, "registry-1.docker.io") == 0;
+}
+
+static int reject_unsupported_registry_auth(const oci_reference_t *reference,
+                                            char *error,
+                                            size_t error_size)
+{
+    if (is_docker_hub_registry(reference))
+    {
+        oras_set_error(error,
+                       error_size,
+                       "Docker Hub authentication is not implemented yet; "
+                       "docker.io requests are not currently supported");
+        return 0;
+    }
+    return 1;
+}
+
 static char *build_url(const oci_reference_t *reference,
                        const char *suffix)
 {
@@ -214,6 +234,10 @@ int oci_registry_fetch_manifest(const oci_reference_t *reference,
     unsigned char *data;
     size_t size;
 
+    if (!reject_unsupported_registry_auth(reference, error, error_size))
+    {
+        return 0;
+    }
     sprintf(suffix, "/manifests/%s", selector_string(reference));
     url = build_url(reference, suffix);
     if (url == NULL)
@@ -254,6 +278,10 @@ int oci_registry_fetch_blob(const oci_reference_t *reference,
     char *url;
     int result;
 
+    if (!reject_unsupported_registry_auth(reference, error, error_size))
+    {
+        return 0;
+    }
     sprintf(suffix, "/blobs/%s", digest);
     url = build_url(reference, suffix);
     if (url == NULL)
@@ -275,6 +303,10 @@ int oci_registry_list_tags(const oci_reference_t *reference,
     unsigned char *data;
     size_t size;
 
+    if (!reject_unsupported_registry_auth(reference, error, error_size))
+    {
+        return 0;
+    }
     url = build_url(reference, "/tags/list");
     if (url == NULL)
     {
@@ -313,6 +345,10 @@ int oci_registry_push_blob(const oci_reference_t *reference,
     char length_text[32];
     const char *location;
 
+    if (!reject_unsupported_registry_auth(reference, error, error_size))
+    {
+        return 0;
+    }
     url = build_url(reference, "/blobs/uploads/");
     if (url == NULL)
     {
@@ -395,6 +431,10 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
     url_fetch_header_t headers[2];
     char length_text[32];
 
+    if (!reject_unsupported_registry_auth(reference, error, error_size))
+    {
+        return 0;
+    }
     sprintf(suffix, "/manifests/%s", selector_string(reference));
     url = build_url(reference, suffix);
     if (url == NULL)
