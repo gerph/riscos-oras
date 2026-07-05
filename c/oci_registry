@@ -76,8 +76,66 @@ static const char *response_header(const url_fetch_response_t *response,
     return NULL;
 }
 
+static int looks_like_html(const unsigned char *data, size_t size)
+{
+    const char *scan;
+    size_t length;
+
+    scan = (const char *)data;
+    length = size;
+    while (length != 0 &&
+           (*scan == ' ' || *scan == '\t' || *scan == '\r' || *scan == '\n'))
+    {
+        ++scan;
+        --length;
+    }
+    if (length >= 5 && strncmp(scan, "<html", 5) == 0)
+    {
+        return 1;
+    }
+    if (length >= 14 && strncmp(scan, "<!DOCTYPE html", 14) == 0)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static int validate_json_response(const url_fetch_response_t *response,
+                                  const char *url,
+                                  char *error,
+                                  size_t error_size)
+{
+    const char *content_type;
+    const unsigned char *body;
+    size_t body_size;
+
+    content_type = response_header(response, "Content-Type");
+    body = response->body;
+    body_size = response->body_size;
+    if (content_type != NULL &&
+        (strstr(content_type, "text/html") != NULL ||
+         strstr(content_type, "application/xhtml") != NULL))
+    {
+        oras_set_error(error,
+                       error_size,
+                       "Unexpected HTML response from %s; this is not an OCI registry JSON endpoint",
+                       url);
+        return 0;
+    }
+    if (looks_like_html(body, body_size))
+    {
+        oras_set_error(error,
+                       error_size,
+                       "Unexpected HTML response from %s; this is not an OCI registry JSON endpoint",
+                       url);
+        return 0;
+    }
+    return 1;
+}
+
 static int fetch_bytes(const char *url,
                        const char *accept,
+                       int expect_json,
                        unsigned char **data_out,
                        size_t *size_out,
                        char *error,
@@ -104,6 +162,12 @@ static int fetch_bytes(const char *url,
     if (response.status_code < 200 || response.status_code >= 300)
     {
         oras_set_error(error, error_size, "HTTP %d from %s", response.status_code, url);
+        oras_free_response(&response);
+        return 0;
+    }
+    if (expect_json &&
+        !validate_json_response(&response, url, error, error_size))
+    {
         oras_free_response(&response);
         return 0;
     }
@@ -159,6 +223,7 @@ int oci_registry_fetch_manifest(const oci_reference_t *reference,
     }
     if (!fetch_bytes(url,
                      ORAS_MANIFEST_MEDIA_TYPE ", " ORAS_INDEX_MEDIA_TYPE ", application/vnd.docker.distribution.manifest.v2+json",
+                     1,
                      &data,
                      &size,
                      error,
@@ -196,7 +261,7 @@ int oci_registry_fetch_blob(const oci_reference_t *reference,
         oras_set_error(error, error_size, "No memory for blob URL");
         return 0;
     }
-    result = fetch_bytes(url, NULL, data_out, size_out, error, error_size);
+    result = fetch_bytes(url, NULL, 0, data_out, size_out, error, error_size);
     free(url);
     return result;
 }
@@ -216,7 +281,7 @@ int oci_registry_list_tags(const oci_reference_t *reference,
         oras_set_error(error, error_size, "No memory for tags URL");
         return 0;
     }
-    if (!fetch_bytes(url, "application/json", &data, &size, error, error_size))
+    if (!fetch_bytes(url, "application/json", 1, &data, &size, error, error_size))
     {
         free(url);
         return 0;

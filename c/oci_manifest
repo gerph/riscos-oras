@@ -179,6 +179,18 @@ int oci_parse_reference(const char *text,
         oras_set_error(error, error_size, "No memory for reference");
         return 0;
     }
+    if (strcmp(reference->registry, "docker.io") == 0 ||
+        strcmp(reference->registry, "index.docker.io") == 0)
+    {
+        free(reference->registry);
+        reference->registry = oras_strdup("registry-1.docker.io");
+        if (reference->registry == NULL)
+        {
+            oras_free_reference(reference);
+            oras_set_error(error, error_size, "No memory for Docker Hub registry mapping");
+            return 0;
+        }
+    }
     return 1;
 }
 
