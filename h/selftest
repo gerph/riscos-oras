@@ -1,0 +1,12 @@
+/*******************************************************************
+ * File:        selftest
+ * Purpose:     oras self-test entry point
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef SELFTEST_H
+#define SELFTEST_H
+
+int oras_run_self_tests(void);
+
+#endif

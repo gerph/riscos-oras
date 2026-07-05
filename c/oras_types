@@ -1,0 +1,267 @@
+/*******************************************************************
+ * File:        oras_types
+ * Purpose:     Shared oras data types and helpers
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
+
+#include "oras_types.h"
+
+/*******************************************************************
+ Function:      oras_set_error
+ Description:   Format an error message into a caller buffer
+ Parameters:    buffer = destination
+ Returns:       none
+ ******************************************************************/
+void oras_set_error(char *buffer, size_t buffer_size, const char *format, ...)
+{
+    va_list ap;
+
+    if (buffer == NULL || buffer_size == 0)
+    {
+        return;
+    }
+    va_start(ap, format);
+    vsprintf(buffer, format, ap);
+    va_end(ap);
+}
+
+/*******************************************************************
+ Function:      oras_strdup
+ Description:   Duplicate a string
+ Parameters:    text = source string
+ Returns:       allocated copy or NULL
+ ******************************************************************/
+char *oras_strdup(const char *text)
+{
+    size_t length;
+    char *copy;
+
+    if (text == NULL)
+    {
+        return NULL;
+    }
+    length = strlen(text);
+    copy = malloc(length + 1);
+    if (copy == NULL)
+    {
+        return NULL;
+    }
+    memcpy(copy, text, length + 1);
+    return copy;
+}
+
+/*******************************************************************
+ Function:      oras_strndup
+ Description:   Duplicate a bounded string
+ Parameters:    text = source string
+ Returns:       allocated copy or NULL
+ ******************************************************************/
+char *oras_strndup(const char *text, size_t length)
+{
+    char *copy;
+
+    copy = malloc(length + 1);
+    if (copy == NULL)
+    {
+        return NULL;
+    }
+    memcpy(copy, text, length);
+    copy[length] = '\0';
+    return copy;
+}
+
+/*******************************************************************
+ Function:      oras_reallocarray
+ Description:   Resize an array with overflow protection
+ Parameters:    ptr = old pointer
+ Returns:       resized pointer or NULL
+ ******************************************************************/
+void *oras_reallocarray(void *ptr, size_t count, size_t size)
+{
+    if (count != 0 && size > ((size_t)-1) / count)
+    {
+        return NULL;
+    }
+    return realloc(ptr, count * size);
+}
+
+/*******************************************************************
+ Function:      oras_free_annotations
+ Description:   Release an annotation array
+ Parameters:    annotations = array
+ Returns:       none
+ ******************************************************************/
+void oras_free_annotations(oras_annotation_t *annotations, size_t count)
+{
+    size_t i;
+
+    if (annotations == NULL)
+    {
+        return;
+    }
+    for (i = 0; i < count; ++i)
+    {
+        free(annotations[i].key);
+        free(annotations[i].value);
+    }
+    free(annotations);
+}
+
+/*******************************************************************
+ Function:      oras_free_descriptor
+ Description:   Release a descriptor
+ Parameters:    descriptor = descriptor to release
+ Returns:       none
+ ******************************************************************/
+void oras_free_descriptor(oci_descriptor_t *descriptor)
+{
+    if (descriptor == NULL)
+    {
+        return;
+    }
+    free(descriptor->media_type);
+    free(descriptor->digest);
+    free(descriptor->platform_os);
+    free(descriptor->platform_arch);
+    oras_free_annotations(descriptor->annotations, descriptor->annotation_count);
+    memset(descriptor, 0, sizeof(*descriptor));
+}
+
+/*******************************************************************
+ Function:      oras_free_manifest
+ Description:   Release a manifest structure
+ Parameters:    manifest = manifest to release
+ Returns:       none
+ ******************************************************************/
+void oras_free_manifest(oci_manifest_t *manifest)
+{
+    size_t i;
+
+    if (manifest == NULL)
+    {
+        return;
+    }
+    free(manifest->media_type);
+    free(manifest->artifact_type);
+    oras_free_annotations(manifest->annotations, manifest->annotation_count);
+    for (i = 0; i < manifest->layer_count; ++i)
+    {
+        oras_free_descriptor(&manifest->layers[i]);
+    }
+    free(manifest->layers);
+    for (i = 0; i < manifest->manifest_count; ++i)
+    {
+        oras_free_descriptor(&manifest->manifests[i]);
+    }
+    free(manifest->manifests);
+    memset(manifest, 0, sizeof(*manifest));
+}
+
+/*******************************************************************
+ Function:      oras_free_reference
+ Description:   Release an OCI reference
+ Parameters:    reference = reference to release
+ Returns:       none
+ ******************************************************************/
+void oras_free_reference(oci_reference_t *reference)
+{
+    if (reference == NULL)
+    {
+        return;
+    }
+    free(reference->registry);
+    free(reference->repository);
+    free(reference->tag);
+    free(reference->digest);
+    memset(reference, 0, sizeof(*reference));
+}
+
+/*******************************************************************
+ Function:      oras_free_response
+ Description:   Release a transport response
+ Parameters:    response = response to release
+ Returns:       none
+ ******************************************************************/
+void oras_free_response(url_fetch_response_t *response)
+{
+    size_t i;
+
+    if (response == NULL)
+    {
+        return;
+    }
+    for (i = 0; i < response->header_count; ++i)
+    {
+        free(response->headers[i].name);
+        free(response->headers[i].value);
+    }
+    free(response->headers);
+    free(response->body);
+    memset(response, 0, sizeof(*response));
+}
+
+/*******************************************************************
+ Function:      oras_find_annotation
+ Description:   Find an annotation value by key
+ Parameters:    annotations = annotation array
+ Returns:       value or NULL
+ ******************************************************************/
+const char *oras_find_annotation(const oras_annotation_t *annotations,
+                                 size_t count,
+                                 const char *key)
+{
+    size_t i;
+
+    for (i = 0; i < count; ++i)
+    {
+        if (strcmp(annotations[i].key, key) == 0)
+        {
+            return annotations[i].value;
+        }
+    }
+    return NULL;
+}
+
+/*******************************************************************
+ Function:      oras_set_annotation
+ Description:   Append an annotation pair
+ Parameters:    annotations = array pointer
+ Returns:       1 if appended
+ ******************************************************************/
+int oras_set_annotation(oras_annotation_t **annotations,
+                        size_t *count,
+                        const char *key,
+                        const char *value,
+                        char *error,
+                        size_t error_size)
+{
+    oras_annotation_t *grown;
+    char *key_copy;
+    char *value_copy;
+
+    grown = oras_reallocarray(*annotations, *count + 1, sizeof(**annotations));
+    if (grown == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for annotation");
+        return 0;
+    }
+    key_copy = oras_strdup(key);
+    value_copy = oras_strdup(value);
+    if (key_copy == NULL || value_copy == NULL)
+    {
+        free(key_copy);
+        free(value_copy);
+        oras_set_error(error, error_size, "No memory for annotation text");
+        return 0;
+    }
+    *annotations = grown;
+    (*annotations)[*count].key = key_copy;
+    (*annotations)[*count].value = value_copy;
+    *count += 1;
+    return 1;
+}

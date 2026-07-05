@@ -1,0 +1,318 @@
+/*******************************************************************
+ * File:        url_fetch
+ * Purpose:     URL Fetcher transport wrapper for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "RISC_OSLib/os.h"
+#include "URL/URLFetcher.h"
+
+#include "oras_types.h"
+#include "url_fetch.h"
+
+static int method_number(const char *method)
+{
+    if (strcmp(method, "GET") == 0)
+    {
+        return urlmethod_getobject;
+    }
+    if (strcmp(method, "HEAD") == 0)
+    {
+        return urlmethod_getheaders;
+    }
+    if (strcmp(method, "POST") == 0)
+    {
+        return urlmethod_post;
+    }
+    if (strcmp(method, "PUT") == 0)
+    {
+        return urlmethod_store;
+    }
+    if (strcmp(method, "DELETE") == 0)
+    {
+        return urlmethod_delete;
+    }
+    return 0;
+}
+
+static int append_bytes(unsigned char **buffer,
+                        size_t *used,
+                        size_t *allocated,
+                        const unsigned char *data,
+                        size_t length,
+                        char *error,
+                        size_t error_size)
+{
+    unsigned char *grown;
+    size_t new_allocated;
+
+    if (*used + length > *allocated)
+    {
+        new_allocated = *allocated == 0 ? 4096 : *allocated * 2;
+        while (new_allocated < *used + length)
+        {
+            new_allocated *= 2;
+        }
+        grown = oras_reallocarray(*buffer, new_allocated, 1);
+        if (grown == NULL)
+        {
+            oras_set_error(error, error_size, "No memory for HTTP response");
+            return 0;
+        }
+        *buffer = grown;
+        *allocated = new_allocated;
+    }
+    memcpy(*buffer + *used, data, length);
+    *used += length;
+    return 1;
+}
+
+static char *build_request_block(const url_fetch_request_t *request,
+                                 size_t *length_out,
+                                 char *error,
+                                 size_t error_size)
+{
+    size_t i;
+    size_t total;
+    char *block;
+    char *writer;
+
+    total = 2;
+    for (i = 0; i < request->header_count; ++i)
+    {
+        total += strlen(request->headers[i].name) + 2 +
+                 strlen(request->headers[i].value) + 2;
+    }
+    total += request->body_size;
+    block = malloc(total);
+    if (block == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for request headers");
+        return NULL;
+    }
+    writer = block;
+    for (i = 0; i < request->header_count; ++i)
+    {
+        writer += sprintf(writer, "%s: %s\r\n",
+                          request->headers[i].name,
+                          request->headers[i].value);
+    }
+    memcpy(writer, "\r\n", 2);
+    writer += 2;
+    if (request->body_size != 0)
+    {
+        memcpy(writer, request->body, request->body_size);
+    }
+    *length_out = total;
+    return block;
+}
+
+static int parse_response_headers(const unsigned char *raw,
+                                  size_t raw_size,
+                                  url_fetch_response_t *response,
+                                  char *error,
+                                  size_t error_size)
+{
+    size_t header_end;
+    const unsigned char *body;
+    size_t body_size;
+    char *header_copy;
+    char *line;
+    char *next;
+
+    header_end = 0;
+    while (header_end + 3 < raw_size)
+    {
+        if ((raw[header_end] == '\r' && raw[header_end + 1] == '\n' &&
+             raw[header_end + 2] == '\r' && raw[header_end + 3] == '\n') ||
+            (raw[header_end] == '\n' && raw[header_end + 1] == '\n'))
+        {
+            break;
+        }
+        ++header_end;
+    }
+    if (header_end + 1 >= raw_size)
+    {
+        oras_set_error(error, error_size, "HTTP response missing header terminator");
+        return 0;
+    }
+    body = raw + header_end + ((raw[header_end] == '\n') ? 2 : 4);
+    body_size = raw_size - (size_t)(body - raw);
+    response->body = malloc(body_size == 0 ? 1 : body_size);
+    if (response->body == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for response body");
+        return 0;
+    }
+    if (body_size != 0)
+    {
+        memcpy(response->body, body, body_size);
+    }
+    response->body_size = body_size;
+
+    header_copy = oras_strndup((const char *)raw, body - raw);
+    if (header_copy == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for response headers");
+        return 0;
+    }
+    line = strtok(header_copy, "\r\n");
+    if (line == NULL || sscanf(line, "HTTP/%*s %d", &response->status_code) != 1)
+    {
+        free(header_copy);
+        oras_set_error(error, error_size, "Unable to parse HTTP status line");
+        return 0;
+    }
+    while ((next = strtok(NULL, "\r\n")) != NULL)
+    {
+        char *colon;
+
+        if (next[0] == '\0')
+        {
+            continue;
+        }
+        colon = strchr(next, ':');
+        if (colon == NULL)
+        {
+            continue;
+        }
+        *colon++ = '\0';
+        while (*colon == ' ' || *colon == '\t')
+        {
+            ++colon;
+        }
+        if (!oras_set_annotation((oras_annotation_t **)&response->headers,
+                                 &response->header_count,
+                                 next,
+                                 colon,
+                                 error,
+                                 error_size))
+        {
+            free(header_copy);
+            return 0;
+        }
+    }
+    free(header_copy);
+    return 1;
+}
+
+int url_fetch_execute(const url_fetch_request_t *request,
+                      url_fetch_response_t *response,
+                      char *error,
+                      size_t error_size)
+{
+    os_error *oserr;
+    os_regset regs;
+    int session;
+    int flags;
+    int method;
+    unsigned long status;
+    unsigned char chunk[4096];
+    unsigned char *raw;
+    size_t raw_used;
+    size_t raw_allocated;
+    char *request_block;
+    size_t request_block_length;
+
+    memset(response, 0, sizeof(*response));
+    method = method_number(request->method);
+    if (method == 0)
+    {
+        oras_set_error(error, error_size, "Unsupported HTTP method '%s'", request->method);
+        return 0;
+    }
+    memset(&regs, 0, sizeof(regs));
+    regs.r[0] = 0;
+    oserr = os_swix(URL_Register | os_X, &regs);
+    if (oserr != NULL)
+    {
+        oras_set_error(error, error_size, "URL_Register failed: %s", oserr->errmess);
+        return 0;
+    }
+    session = regs.r[1];
+    request_block = build_request_block(request, &request_block_length, error, error_size);
+    if (request_block == NULL)
+    {
+        goto fail;
+    }
+    flags = request->header_count != 0 || request->body_size != 0 ? URL_GetURL_DataLengthGiven : 0;
+    memset(&regs, 0, sizeof(regs));
+    regs.r[0] = flags;
+    regs.r[1] = session;
+    regs.r[2] = method;
+    regs.r[3] = (int)request->url;
+    regs.r[4] = flags != 0 ? (int)request_block : 0;
+    regs.r[5] = flags != 0 ? (int)request_block_length : 2;
+    regs.r[6] = 0;
+    oserr = os_swix(URL_GetURL | os_X, &regs);
+    free(request_block);
+    if (oserr != NULL)
+    {
+        oras_set_error(error, error_size, "URL_GetURL failed: %s", oserr->errmess);
+        goto fail;
+    }
+
+    raw = NULL;
+    raw_used = 0;
+    raw_allocated = 0;
+    status = 0;
+    do
+    {
+        memset(&regs, 0, sizeof(regs));
+        regs.r[0] = 0;
+        regs.r[1] = session;
+        regs.r[2] = (int)chunk;
+        regs.r[3] = sizeof(chunk);
+        oserr = os_swix(URL_ReadData | os_X, &regs);
+        if (oserr != NULL)
+        {
+            oras_set_error(error, error_size, "URL_ReadData failed: %s", oserr->errmess);
+            free(raw);
+            goto fail;
+        }
+        status = (unsigned long)regs.r[0];
+        if (regs.r[4] > 0)
+        {
+            if (!append_bytes(&raw, &raw_used, &raw_allocated,
+                              chunk, (size_t)regs.r[4], error, error_size))
+            {
+                free(raw);
+                goto fail;
+            }
+        }
+        if ((status & URL_Status_Complete) == 0 && regs.r[4] == 0)
+        {
+            os_swi1(0x0000016B, 1);
+        }
+    } while ((status & URL_Status_Complete) == 0);
+
+    memset(&regs, 0, sizeof(regs));
+    regs.r[0] = 0;
+    regs.r[1] = session;
+    os_swix(URL_Deregister | os_X, &regs);
+
+    if (status & URL_Status_Aborted)
+    {
+        free(raw);
+        oras_set_error(error, error_size, "HTTP transfer aborted");
+        return 0;
+    }
+    if (!parse_response_headers(raw, raw_used, response, error, error_size))
+    {
+        free(raw);
+        return 0;
+    }
+    free(raw);
+    return 1;
+
+fail:
+    memset(&regs, 0, sizeof(regs));
+    regs.r[0] = 0;
+    regs.r[1] = session;
+    os_swix(URL_Deregister | os_X, &regs);
+    return 0;
+}

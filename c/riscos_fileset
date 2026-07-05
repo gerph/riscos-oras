@@ -1,0 +1,459 @@
+/*******************************************************************
+ * File:        riscos_fileset
+ * Purpose:     RISC OS fileset planning and extraction helpers
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "RISC_OSLib/os.h"
+
+#include "oras_types.h"
+#include "sha256.h"
+#include "riscos_metadata.h"
+#include "riscos_fileset.h"
+
+static int append_entry(riscos_fileset_entry_t **entries,
+                        size_t *entry_count,
+                        const char *source_path,
+                        const char *relative_path,
+                        char *error,
+                        size_t error_size);
+static int create_parent_directories(const char *path,
+                                     char *error,
+                                     size_t error_size);
+static int path_object_type(const char *path);
+
+int riscos_fileset_sanitise_path(const char *path,
+                                 char **sanitised_out,
+                                 char *error,
+                                 size_t error_size)
+{
+    char *copy;
+    char *walker;
+    char *next;
+
+    if (path[0] == '/' || path[0] == '\0')
+    {
+        oras_set_error(error, error_size, "Invalid output path '%s'", path);
+        return 0;
+    }
+    copy = oras_strdup(path);
+    if (copy == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for path");
+        return 0;
+    }
+    walker = copy;
+    while (walker != NULL)
+    {
+        next = strchr(walker, '/');
+        if (next != NULL)
+        {
+            *next++ = '\0';
+        }
+        if (strcmp(walker, ".") == 0 || strcmp(walker, "..") == 0 || walker[0] == '\0')
+        {
+            free(copy);
+            oras_set_error(error, error_size, "Unsafe output path '%s'", path);
+            return 0;
+        }
+        walker = next;
+    }
+    *sanitised_out = copy;
+    return 1;
+}
+
+static int file_digest_and_size(const char *path,
+                                char **digest_out,
+                                size_t *size_out,
+                                char *error,
+                                size_t error_size)
+{
+    FILE *fp;
+    unsigned char buffer[4096];
+    size_t count;
+    size_t total;
+    sha256_context_t context;
+    unsigned char digest[32];
+    char digest_hex[65];
+    char *result;
+
+    fp = fopen(path, "rb");
+    if (fp == NULL)
+    {
+        oras_set_error(error, error_size, "Unable to open '%s'", path);
+        return 0;
+    }
+    sha256_init(&context);
+    total = 0;
+    while ((count = fread(buffer, 1, sizeof(buffer), fp)) != 0)
+    {
+        total += count;
+        sha256_update(&context, buffer, count);
+    }
+    fclose(fp);
+    sha256_final(&context, digest);
+    sha256_to_hex(digest, digest_hex);
+    result = malloc(strlen(digest_hex) + 8);
+    if (result == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for digest");
+        return 0;
+    }
+    strcpy(result, "sha256:");
+    strcat(result, digest_hex);
+    *digest_out = result;
+    *size_out = total;
+    return 1;
+}
+
+static int append_entry(riscos_fileset_entry_t **entries,
+                        size_t *entry_count,
+                        const char *source_path,
+                        const char *relative_path,
+                        char *error,
+                        size_t error_size)
+{
+    riscos_fileset_entry_t *grown;
+    riscos_fileset_entry_t *entry;
+
+    grown = oras_reallocarray(*entries, *entry_count + 1, sizeof(**entries));
+    if (grown == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for fileset entry");
+        return 0;
+    }
+    *entries = grown;
+    entry = &grown[*entry_count];
+    memset(entry, 0, sizeof(*entry));
+    entry->source_path = oras_strdup(source_path);
+    entry->relative_path = oras_strdup(relative_path);
+    entry->descriptor.media_type = oras_strdup(ORAS_DESCRIPTOR_MEDIA_TYPE);
+    if (entry->source_path == NULL ||
+        entry->relative_path == NULL ||
+        entry->descriptor.media_type == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for fileset entry");
+        return 0;
+    }
+    if (!file_digest_and_size(source_path,
+                              &entry->descriptor.digest,
+                              &entry->descriptor.size,
+                              error,
+                              error_size))
+    {
+        return 0;
+    }
+    if (!oras_set_annotation(&entry->descriptor.annotations,
+                             &entry->descriptor.annotation_count,
+                             ORAS_ANNOTATION_TITLE,
+                             relative_path,
+                             error,
+                             error_size))
+    {
+        return 0;
+    }
+    if (!riscos_metadata_read(source_path, &entry->meta, error, error_size))
+    {
+        return 0;
+    }
+    if (!riscos_metadata_to_annotations(&entry->meta,
+                                        &entry->descriptor.annotations,
+                                        &entry->descriptor.annotation_count,
+                                        error,
+                                        error_size))
+    {
+        return 0;
+    }
+    *entry_count += 1;
+    return 1;
+}
+
+static int has_duplicate_relative_path(const riscos_fileset_entry_t *entries,
+                                       size_t entry_count,
+                                       const char *path)
+{
+    size_t i;
+
+    for (i = 0; i < entry_count; ++i)
+    {
+        if (strcmp(entries[i].relative_path, path) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int path_object_type(const char *path)
+{
+    os_filestr info;
+
+    memset(&info, 0, sizeof(info));
+    info.action = 5;
+    info.name = (char *)path;
+    if (os_file(&info) != NULL)
+    {
+        return 0;
+    }
+    return info.action;
+}
+
+int riscos_fileset_plan(const char *const *paths,
+                        size_t path_count,
+                        riscos_fileset_entry_t **entries_out,
+                        size_t *entry_count_out,
+                        char *error,
+                        size_t error_size)
+{
+    size_t i;
+    riscos_fileset_entry_t *entries;
+    size_t entry_count;
+    const char *leaf;
+    char *sanitised;
+
+    entries = NULL;
+    entry_count = 0;
+    for (i = 0; i < path_count; ++i)
+    {
+        leaf = strrchr(paths[i], '/');
+        leaf = leaf == NULL ? paths[i] : leaf + 1;
+        if (path_object_type(paths[i]) == 2)
+        {
+            oras_set_error(error,
+                           error_size,
+                           "Directory input '%s' is not yet supported; pass files explicitly",
+                           paths[i]);
+            riscos_fileset_free_entries(entries, entry_count);
+            return 0;
+        }
+        if (!riscos_fileset_sanitise_path(leaf, &sanitised, error, error_size))
+        {
+            riscos_fileset_free_entries(entries, entry_count);
+            return 0;
+        }
+        if (has_duplicate_relative_path(entries, entry_count, sanitised) ||
+            !append_entry(&entries, &entry_count, paths[i], sanitised, error, error_size))
+        {
+            free(sanitised);
+            riscos_fileset_free_entries(entries, entry_count);
+            return 0;
+        }
+        free(sanitised);
+    }
+    *entries_out = entries;
+    *entry_count_out = entry_count;
+    return 1;
+}
+
+void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
+                                 size_t entry_count)
+{
+    size_t i;
+
+    for (i = 0; i < entry_count; ++i)
+    {
+        free(entries[i].source_path);
+        free(entries[i].relative_path);
+        oras_free_descriptor(&entries[i].descriptor);
+    }
+    free(entries);
+}
+
+int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
+                                         size_t entry_count,
+                                         oci_manifest_t *manifest,
+                                         char *error,
+                                         size_t error_size)
+{
+    size_t i;
+    size_t j;
+
+    memset(manifest, 0, sizeof(*manifest));
+    manifest->schema_version = 2;
+    manifest->media_type = oras_strdup(ORAS_MANIFEST_MEDIA_TYPE);
+    manifest->artifact_type = oras_strdup(ORAS_ARTIFACT_TYPE);
+    if (manifest->media_type == NULL || manifest->artifact_type == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest");
+        oras_free_manifest(manifest);
+        return 0;
+    }
+    if (!oras_set_annotation(&manifest->annotations,
+                             &manifest->annotation_count,
+                             ORAS_ANNOTATION_FORMAT,
+                             ORAS_FILES_FORMAT,
+                             error,
+                             error_size))
+    {
+        oras_free_manifest(manifest);
+        return 0;
+    }
+    manifest->layers = calloc(entry_count, sizeof(*manifest->layers));
+    if (entry_count != 0 && manifest->layers == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest layers");
+        oras_free_manifest(manifest);
+        return 0;
+    }
+    manifest->layer_count = entry_count;
+    for (i = 0; i < entry_count; ++i)
+    {
+        const oci_descriptor_t *source;
+        oci_descriptor_t *target;
+
+        source = &entries[i].descriptor;
+        target = &manifest->layers[i];
+        target->media_type = oras_strdup(source->media_type);
+        target->digest = oras_strdup(source->digest);
+        target->size = source->size;
+        for (j = 0; j < source->annotation_count; ++j)
+        {
+            if (!oras_set_annotation(&target->annotations,
+                                     &target->annotation_count,
+                                     source->annotations[j].key,
+                                     source->annotations[j].value,
+                                     error,
+                                     error_size))
+            {
+                oras_free_manifest(manifest);
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int create_parent_directories(const char *path,
+                                     char *error,
+                                     size_t error_size)
+{
+    char *copy;
+    char *slash;
+    os_filestr info;
+
+    copy = oras_strdup(path);
+    if (copy == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for directory creation");
+        return 0;
+    }
+    slash = strchr(copy, '/');
+    while (slash != NULL)
+    {
+        *slash = '\0';
+        if (copy[0] != '\0' && path_object_type(copy) == 0)
+        {
+            memset(&info, 0, sizeof(info));
+            info.action = 8;
+            info.name = copy;
+            if (os_file(&info) != NULL)
+            {
+                free(copy);
+                oras_set_error(error, error_size, "Unable to create directory '%s'", copy);
+                return 0;
+            }
+        }
+        *slash = '/';
+        slash = strchr(slash + 1, '/');
+    }
+    free(copy);
+    return 1;
+}
+
+int riscos_fileset_extract(const oci_manifest_t *manifest,
+                           const char *directory,
+                           riscos_fileset_blob_fetcher_f fetch_blob,
+                           void *private_ref,
+                           char *error,
+                           size_t error_size)
+{
+    size_t i;
+    size_t j;
+
+    for (i = 0; i < manifest->layer_count; ++i)
+    {
+        const char *title;
+        char *safe_path;
+        char output_path[1024];
+        riscos_file_meta_t meta;
+        unsigned char *data;
+        size_t size;
+        FILE *fp;
+
+        title = oras_find_annotation(manifest->layers[i].annotations,
+                                     manifest->layers[i].annotation_count,
+                                     ORAS_ANNOTATION_TITLE);
+        if (title == NULL)
+        {
+            oras_set_error(error, error_size, "Layer missing title annotation");
+            return 0;
+        }
+        if (!riscos_fileset_sanitise_path(title, &safe_path, error, error_size))
+        {
+            return 0;
+        }
+        for (j = 0; j < i; ++j)
+        {
+            const char *prior_title;
+
+            prior_title = oras_find_annotation(manifest->layers[j].annotations,
+                                               manifest->layers[j].annotation_count,
+                                               ORAS_ANNOTATION_TITLE);
+            if (prior_title != NULL && strcmp(prior_title, safe_path) == 0)
+            {
+                free(safe_path);
+                oras_set_error(error, error_size, "Duplicate output path '%s'", title);
+                return 0;
+            }
+        }
+        sprintf(output_path, "%s/%s", directory, safe_path);
+        if (!create_parent_directories(output_path, error, error_size))
+        {
+            free(safe_path);
+            return 0;
+        }
+        if (!fetch_blob(private_ref, &manifest->layers[i], &data, &size, error, error_size))
+        {
+            free(safe_path);
+            return 0;
+        }
+        fp = fopen(output_path, "wb");
+        if (fp == NULL)
+        {
+            free(data);
+            free(safe_path);
+            oras_set_error(error, error_size, "Unable to create '%s'", output_path);
+            return 0;
+        }
+        if (size != 0 && fwrite(data, 1, size, fp) != size)
+        {
+            fclose(fp);
+            free(data);
+            free(safe_path);
+            oras_set_error(error, error_size, "Unable to write '%s'", output_path);
+            return 0;
+        }
+        fclose(fp);
+        free(data);
+        if (!riscos_metadata_from_annotations(manifest->layers[i].annotations,
+                                              manifest->layers[i].annotation_count,
+                                              &meta,
+                                              error,
+                                              error_size))
+        {
+            free(safe_path);
+            return 0;
+        }
+        if (!riscos_metadata_apply(output_path, &meta, error, error_size))
+        {
+            free(safe_path);
+            return 0;
+        }
+        free(safe_path);
+    }
+    return 1;
+}

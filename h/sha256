@@ -1,0 +1,29 @@
+/*******************************************************************
+ * File:        sha256
+ * Purpose:     SHA-256 digest support for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef SHA256_H
+#define SHA256_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct sha256_context_s
+{
+    uint32_t state[8];
+    uint32_t bit_count_hi;
+    uint32_t bit_count_lo;
+    unsigned char block[64];
+    size_t block_used;
+} sha256_context_t;
+
+void sha256_init(sha256_context_t *context);
+void sha256_update(sha256_context_t *context,
+                   const unsigned char *data,
+                   size_t length);
+void sha256_final(sha256_context_t *context, unsigned char digest[32]);
+void sha256_to_hex(const unsigned char digest[32], char output[65]);
+
+#endif

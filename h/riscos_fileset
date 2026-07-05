@@ -1,0 +1,43 @@
+/*******************************************************************
+ * File:        riscos_fileset
+ * Purpose:     RISC OS fileset planning and extraction helpers
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef RISCOS_FILESET_H
+#define RISCOS_FILESET_H
+
+#include "oras_types.h"
+
+typedef int (*riscos_fileset_blob_fetcher_f)(void *private_ref,
+                                             const oci_descriptor_t *descriptor,
+                                             unsigned char **data_out,
+                                             size_t *size_out,
+                                             char *error,
+                                             size_t error_size);
+
+int riscos_fileset_plan(const char *const *paths,
+                        size_t path_count,
+                        riscos_fileset_entry_t **entries_out,
+                        size_t *entry_count_out,
+                        char *error,
+                        size_t error_size);
+void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
+                                 size_t entry_count);
+int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
+                                         size_t entry_count,
+                                         oci_manifest_t *manifest,
+                                         char *error,
+                                         size_t error_size);
+int riscos_fileset_extract(const oci_manifest_t *manifest,
+                           const char *directory,
+                           riscos_fileset_blob_fetcher_f fetch_blob,
+                           void *private_ref,
+                           char *error,
+                           size_t error_size);
+int riscos_fileset_sanitise_path(const char *path,
+                                 char **sanitised_out,
+                                 char *error,
+                                 size_t error_size);
+
+#endif

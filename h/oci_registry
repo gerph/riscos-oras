@@ -1,0 +1,37 @@
+/*******************************************************************
+ * File:        oci_registry
+ * Purpose:     OCI registry client support for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef OCI_REGISTRY_H
+#define OCI_REGISTRY_H
+
+#include "oras_types.h"
+
+int oci_registry_fetch_manifest(const oci_reference_t *reference,
+                                char **json_out,
+                                char *error,
+                                size_t error_size);
+int oci_registry_fetch_blob(const oci_reference_t *reference,
+                            const char *digest,
+                            unsigned char **data_out,
+                            size_t *size_out,
+                            char *error,
+                            size_t error_size);
+int oci_registry_list_tags(const oci_reference_t *reference,
+                           char **json_out,
+                           char *error,
+                           size_t error_size);
+int oci_registry_push_blob(const oci_reference_t *reference,
+                           const unsigned char *data,
+                           size_t size,
+                           const char *digest,
+                           char *error,
+                           size_t error_size);
+int oci_registry_push_manifest(const oci_reference_t *reference,
+                               const char *manifest_json,
+                               char *error,
+                               size_t error_size);
+
+#endif

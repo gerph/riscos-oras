@@ -1,0 +1,31 @@
+/*******************************************************************
+ * File:        riscos_metadata
+ * Purpose:     RISC OS file metadata handling for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef RISCOS_METADATA_H
+#define RISCOS_METADATA_H
+
+#include "oras_types.h"
+
+int riscos_metadata_read(const char *path,
+                         riscos_file_meta_t *meta,
+                         char *error,
+                         size_t error_size);
+int riscos_metadata_apply(const char *path,
+                          const riscos_file_meta_t *meta,
+                          char *error,
+                          size_t error_size);
+int riscos_metadata_to_annotations(const riscos_file_meta_t *meta,
+                                   oras_annotation_t **annotations,
+                                   size_t *annotation_count,
+                                   char *error,
+                                   size_t error_size);
+int riscos_metadata_from_annotations(const oras_annotation_t *annotations,
+                                     size_t annotation_count,
+                                     riscos_file_meta_t *meta,
+                                     char *error,
+                                     size_t error_size);
+
+#endif

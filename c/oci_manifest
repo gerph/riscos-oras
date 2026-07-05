@@ -1,0 +1,438 @@
+/*******************************************************************
+ * File:        oci_manifest
+ * Purpose:     OCI manifest and reference handling
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "cJSON/cJSON.h"
+
+#include "oras_types.h"
+#include "oci_manifest.h"
+
+static int parse_descriptor(const cJSON *item,
+                            oci_descriptor_t *descriptor,
+                            char *error,
+                            size_t error_size)
+{
+    const cJSON *media_type;
+    const cJSON *digest;
+    const cJSON *size_item;
+    const cJSON *annotations;
+    const cJSON *platform;
+    cJSON *entry;
+
+    memset(descriptor, 0, sizeof(*descriptor));
+    media_type = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "mediaType");
+    digest = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "digest");
+    size_item = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "size");
+    if (!cJSON_IsString((cJSON *)media_type) ||
+        !cJSON_IsString((cJSON *)digest) ||
+        !cJSON_IsNumber((cJSON *)size_item))
+    {
+        oras_set_error(error, error_size, "Descriptor missing mediaType/digest/size");
+        return 0;
+    }
+    descriptor->media_type = oras_strdup(media_type->valuestring);
+    descriptor->digest = oras_strdup(digest->valuestring);
+    descriptor->size = (size_t)size_item->valuedouble;
+    if (descriptor->media_type == NULL || descriptor->digest == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for descriptor");
+        oras_free_descriptor(descriptor);
+        return 0;
+    }
+    annotations = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "annotations");
+    if (cJSON_IsObject((cJSON *)annotations))
+    {
+        cJSON_ArrayForEach(entry, (cJSON *)annotations)
+        {
+            if (cJSON_IsString(entry))
+            {
+                if (!oras_set_annotation(&descriptor->annotations,
+                                         &descriptor->annotation_count,
+                                         entry->string,
+                                         entry->valuestring,
+                                         error,
+                                         error_size))
+                {
+                    oras_free_descriptor(descriptor);
+                    return 0;
+                }
+            }
+        }
+    }
+    platform = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "platform");
+    if (cJSON_IsObject((cJSON *)platform))
+    {
+        const cJSON *os_item;
+        const cJSON *arch_item;
+
+        os_item = cJSON_GetObjectItemCaseSensitive((cJSON *)platform, "os");
+        arch_item = cJSON_GetObjectItemCaseSensitive((cJSON *)platform, "architecture");
+        if (cJSON_IsString((cJSON *)os_item))
+        {
+            descriptor->platform_os = oras_strdup(os_item->valuestring);
+        }
+        if (cJSON_IsString((cJSON *)arch_item))
+        {
+            descriptor->platform_arch = oras_strdup(arch_item->valuestring);
+        }
+    }
+    return 1;
+}
+
+static cJSON *descriptor_to_json(const oci_descriptor_t *descriptor)
+{
+    cJSON *item;
+    cJSON *annotations;
+    cJSON *platform;
+    size_t i;
+
+    item = cJSON_CreateObject();
+    if (item == NULL)
+    {
+        return NULL;
+    }
+    cJSON_AddStringToObject(item, "mediaType", descriptor->media_type);
+    cJSON_AddStringToObject(item, "digest", descriptor->digest);
+    cJSON_AddNumberToObject(item, "size", (double)descriptor->size);
+    if (descriptor->annotation_count != 0)
+    {
+        annotations = cJSON_AddObjectToObject(item, "annotations");
+        for (i = 0; i < descriptor->annotation_count; ++i)
+        {
+            cJSON_AddStringToObject(annotations,
+                                    descriptor->annotations[i].key,
+                                    descriptor->annotations[i].value);
+        }
+    }
+    if (descriptor->platform_os != NULL || descriptor->platform_arch != NULL)
+    {
+        platform = cJSON_AddObjectToObject(item, "platform");
+        if (descriptor->platform_os != NULL)
+        {
+            cJSON_AddStringToObject(platform, "os", descriptor->platform_os);
+        }
+        if (descriptor->platform_arch != NULL)
+        {
+            cJSON_AddStringToObject(platform, "architecture", descriptor->platform_arch);
+        }
+    }
+    return item;
+}
+
+int oci_parse_reference(const char *text,
+                        oci_reference_t *reference,
+                        char *error,
+                        size_t error_size)
+{
+    const char *slash;
+    const char *selector;
+    const char *host_end;
+    const char *tag_sep;
+
+    memset(reference, 0, sizeof(*reference));
+    slash = strchr(text, '/');
+    if (slash == NULL)
+    {
+        oras_set_error(error, error_size, "Reference must include registry/repository");
+        return 0;
+    }
+    host_end = slash;
+    if (memchr(text, '.', host_end - text) == NULL &&
+        memchr(text, ':', host_end - text) == NULL &&
+        strncmp(text, "localhost", host_end - text) != 0)
+    {
+        oras_set_error(error, error_size, "Reference must include explicit registry host");
+        return 0;
+    }
+    selector = strchr(slash + 1, '@');
+    if (selector != NULL)
+    {
+        reference->registry = oras_strndup(text, host_end - text);
+        reference->repository = oras_strndup(slash + 1, selector - (slash + 1));
+        reference->digest = oras_strdup(selector + 1);
+    }
+    else
+    {
+        tag_sep = strrchr(slash + 1, ':');
+        reference->registry = oras_strndup(text, host_end - text);
+        if (tag_sep != NULL && strchr(tag_sep + 1, '/') == NULL)
+        {
+            reference->repository = oras_strndup(slash + 1, tag_sep - (slash + 1));
+            reference->tag = oras_strdup(tag_sep + 1);
+        }
+        else
+        {
+            reference->repository = oras_strdup(slash + 1);
+            reference->tag = oras_strdup("latest");
+        }
+    }
+    if (reference->registry == NULL ||
+        reference->repository == NULL ||
+        (reference->tag == NULL && reference->digest == NULL))
+    {
+        oras_free_reference(reference);
+        oras_set_error(error, error_size, "No memory for reference");
+        return 0;
+    }
+    return 1;
+}
+
+int oci_manifest_parse(const char *json,
+                       oci_manifest_t *manifest,
+                       char *error,
+                       size_t error_size)
+{
+    cJSON *root;
+    cJSON *schema;
+    cJSON *media_type;
+    cJSON *artifact_type;
+    cJSON *layers;
+    cJSON *manifests;
+    cJSON *annotations;
+    cJSON *item;
+    int index;
+
+    memset(manifest, 0, sizeof(*manifest));
+    root = cJSON_Parse(json);
+    if (root == NULL)
+    {
+        oras_set_error(error, error_size, "Malformed manifest JSON");
+        return 0;
+    }
+    schema = cJSON_GetObjectItemCaseSensitive(root, "schemaVersion");
+    media_type = cJSON_GetObjectItemCaseSensitive(root, "mediaType");
+    artifact_type = cJSON_GetObjectItemCaseSensitive(root, "artifactType");
+    if (!cJSON_IsNumber(schema))
+    {
+        cJSON_Delete(root);
+        oras_set_error(error, error_size, "Manifest missing schemaVersion");
+        return 0;
+    }
+    manifest->schema_version = schema->valueint;
+    if (cJSON_IsString(media_type))
+    {
+        manifest->media_type = oras_strdup(media_type->valuestring);
+    }
+    if (cJSON_IsString(artifact_type))
+    {
+        manifest->artifact_type = oras_strdup(artifact_type->valuestring);
+    }
+    annotations = cJSON_GetObjectItemCaseSensitive(root, "annotations");
+    if (cJSON_IsObject(annotations))
+    {
+        cJSON_ArrayForEach(item, annotations)
+        {
+            if (cJSON_IsString(item))
+            {
+                if (!oras_set_annotation(&manifest->annotations,
+                                         &manifest->annotation_count,
+                                         item->string,
+                                         item->valuestring,
+                                         error,
+                                         error_size))
+                {
+                    cJSON_Delete(root);
+                    oras_free_manifest(manifest);
+                    return 0;
+                }
+            }
+        }
+    }
+    layers = cJSON_GetObjectItemCaseSensitive(root, "layers");
+    if (cJSON_IsArray(layers))
+    {
+        manifest->layer_count = (size_t)cJSON_GetArraySize(layers);
+        manifest->layers = calloc(manifest->layer_count, sizeof(*manifest->layers));
+        if (manifest->layer_count != 0 && manifest->layers == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for layers");
+            return 0;
+        }
+        for (index = 0; index < (int)manifest->layer_count; ++index)
+        {
+            if (!parse_descriptor(cJSON_GetArrayItem(layers, index),
+                                  &manifest->layers[index],
+                                  error,
+                                  error_size))
+            {
+                cJSON_Delete(root);
+                oras_free_manifest(manifest);
+                return 0;
+            }
+        }
+    }
+    manifests = cJSON_GetObjectItemCaseSensitive(root, "manifests");
+    if (cJSON_IsArray(manifests))
+    {
+        manifest->manifest_count = (size_t)cJSON_GetArraySize(manifests);
+        manifest->manifests = calloc(manifest->manifest_count, sizeof(*manifest->manifests));
+        if (manifest->manifest_count != 0 && manifest->manifests == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for manifests");
+            return 0;
+        }
+        for (index = 0; index < (int)manifest->manifest_count; ++index)
+        {
+            if (!parse_descriptor(cJSON_GetArrayItem(manifests, index),
+                                  &manifest->manifests[index],
+                                  error,
+                                  error_size))
+            {
+                cJSON_Delete(root);
+                oras_free_manifest(manifest);
+                return 0;
+            }
+        }
+    }
+    cJSON_Delete(root);
+    return 1;
+}
+
+int oci_manifest_write(const oci_manifest_t *manifest,
+                       char **json_out,
+                       char *error,
+                       size_t error_size)
+{
+    cJSON *root;
+    cJSON *layers;
+    cJSON *annotations;
+    cJSON *item;
+    char *json;
+    size_t i;
+
+    if (manifest->manifest_count != 0)
+    {
+        oras_set_error(error, error_size, "Index serialisation is not implemented in v1");
+        return 0;
+    }
+    root = cJSON_CreateObject();
+    if (root == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest JSON");
+        return 0;
+    }
+    cJSON_AddNumberToObject(root, "schemaVersion", manifest->schema_version);
+    cJSON_AddStringToObject(root, "mediaType",
+                            manifest->media_type != NULL ? manifest->media_type :
+                            ORAS_MANIFEST_MEDIA_TYPE);
+    if (manifest->artifact_type != NULL)
+    {
+        cJSON_AddStringToObject(root, "artifactType", manifest->artifact_type);
+    }
+    if (manifest->annotation_count != 0)
+    {
+        annotations = cJSON_AddObjectToObject(root, "annotations");
+        for (i = 0; i < manifest->annotation_count; ++i)
+        {
+            cJSON_AddStringToObject(annotations,
+                                    manifest->annotations[i].key,
+                                    manifest->annotations[i].value);
+        }
+    }
+    layers = cJSON_AddArrayToObject(root, "layers");
+    for (i = 0; i < manifest->layer_count; ++i)
+    {
+        item = descriptor_to_json(&manifest->layers[i]);
+        if (item == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for layer JSON");
+            return 0;
+        }
+        cJSON_AddItemToArray(layers, item);
+    }
+    json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL)
+    {
+        oras_set_error(error, error_size, "Unable to serialise manifest JSON");
+        return 0;
+    }
+    *json_out = json;
+    return 1;
+}
+
+int oci_manifest_select(oci_manifest_t *manifest,
+                        const char *platform,
+                        const char *manifest_digest,
+                        oci_descriptor_t *selected,
+                        char *error,
+                        size_t error_size)
+{
+    size_t i;
+    const char *slash;
+    char os_part[64];
+    char arch_part[64];
+    size_t os_length;
+    size_t arch_length;
+
+    if (manifest->manifest_count == 0)
+    {
+        oras_set_error(error, error_size, "Manifest is not an index");
+        return 0;
+    }
+    if (manifest_digest != NULL)
+    {
+        for (i = 0; i < manifest->manifest_count; ++i)
+        {
+            if (strcmp(manifest->manifests[i].digest, manifest_digest) == 0)
+            {
+                *selected = manifest->manifests[i];
+                memset(&manifest->manifests[i], 0, sizeof(manifest->manifests[i]));
+                return 1;
+            }
+        }
+        oras_set_error(error, error_size, "Manifest digest not found in index");
+        return 0;
+    }
+    if (platform != NULL)
+    {
+        slash = strchr(platform, '/');
+        if (slash == NULL)
+        {
+            oras_set_error(error, error_size, "Platform selector must be os/arch");
+            return 0;
+        }
+        os_length = (size_t)(slash - platform);
+        arch_length = strlen(slash + 1);
+        if (os_length >= sizeof(os_part) || arch_length >= sizeof(arch_part))
+        {
+            oras_set_error(error, error_size, "Platform selector too long");
+            return 0;
+        }
+        memcpy(os_part, platform, os_length);
+        os_part[os_length] = '\0';
+        memcpy(arch_part, slash + 1, arch_length + 1);
+        for (i = 0; i < manifest->manifest_count; ++i)
+        {
+            if (manifest->manifests[i].platform_os != NULL &&
+                manifest->manifests[i].platform_arch != NULL &&
+                strcmp(manifest->manifests[i].platform_os, os_part) == 0 &&
+                strcmp(manifest->manifests[i].platform_arch, arch_part) == 0)
+            {
+                *selected = manifest->manifests[i];
+                memset(&manifest->manifests[i], 0, sizeof(manifest->manifests[i]));
+                return 1;
+            }
+        }
+        oras_set_error(error, error_size, "Platform selector not found in index");
+        return 0;
+    }
+    if (manifest->manifest_count == 1)
+    {
+        *selected = manifest->manifests[0];
+        memset(&manifest->manifests[0], 0, sizeof(manifest->manifests[0]));
+        return 1;
+    }
+    oras_set_error(error,
+                   error_size,
+                   "Image index is ambiguous; use --platform or --manifest-digest");
+    return 0;
+}

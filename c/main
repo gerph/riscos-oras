@@ -1,0 +1,267 @@
+/*******************************************************************
+ * File:        main
+ * Purpose:     oras command line tool
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "oras_types.h"
+#include "oci_manifest.h"
+#include "oci_registry.h"
+#include "riscos_fileset.h"
+#include "selftest.h"
+
+#include "VersionNum"
+
+static void write_output(const unsigned char *data, size_t size, const char *path)
+{
+    FILE *fp;
+
+    if (path == NULL)
+    {
+        fwrite(data, 1, size, stdout);
+        return;
+    }
+    fp = fopen(path, "wb");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Unable to open '%s' for writing\n", path);
+        exit(EXIT_FAILURE);
+    }
+    if (size != 0)
+    {
+        fwrite(data, 1, size, fp);
+    }
+    fclose(fp);
+}
+
+static int pull_fetch_blob(void *private_ref,
+                           const oci_descriptor_t *descriptor,
+                           unsigned char **data_out,
+                           size_t *size_out,
+                           char *error,
+                           size_t error_size)
+{
+    const oci_reference_t *reference;
+
+    reference = (const oci_reference_t *)private_ref;
+    return oci_registry_fetch_blob(reference,
+                                   descriptor->digest,
+                                   data_out,
+                                   size_out,
+                                   error,
+                                   error_size);
+}
+
+static void print_usage(void)
+{
+    printf("oras " Module_FullVersionAndDate "\n");
+    printf("Syntax:\n");
+    printf("  *oras pull <reference> [<directory>]\n");
+    printf("  *oras push <reference> <path>...\n");
+    printf("  *oras manifest fetch <reference> [<file>]\n");
+    printf("  *oras blob fetch <reference> <digest> [<file>]\n");
+    printf("  *oras tags <repository>\n");
+    printf("  *oras --self-test\n");
+}
+
+int main(int argc, char *argv[])
+{
+    char error[256];
+
+    if (argc == 2 && strcmp(argv[1], "--self-test") == 0)
+    {
+        return oras_run_self_tests();
+    }
+    if (argc < 2)
+    {
+        print_usage();
+        exit(EXIT_FAILURE);
+    }
+    if (strcmp(argv[1], "manifest") == 0 && argc >= 4 && strcmp(argv[2], "fetch") == 0)
+    {
+        oci_reference_t reference;
+        char *json;
+
+        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+            !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        write_output((const unsigned char *)json, strlen(json), argc >= 5 ? argv[4] : NULL);
+        free(json);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "blob") == 0 && argc >= 5 && strcmp(argv[2], "fetch") == 0)
+    {
+        oci_reference_t reference;
+        unsigned char *data;
+        size_t size;
+
+        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+            !oci_registry_fetch_blob(&reference, argv[4], &data, &size, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        write_output(data, size, argc >= 6 ? argv[5] : NULL);
+        free(data);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "tags") == 0 && argc >= 3)
+    {
+        oci_reference_t reference;
+        char *json;
+
+        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
+            !oci_registry_list_tags(&reference, &json, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        printf("%s\n", json);
+        free(json);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "pull") == 0 && argc >= 3)
+    {
+        oci_reference_t reference;
+        char *json;
+        oci_manifest_t manifest;
+        const char *directory;
+
+        directory = argc >= 4 ? argv[3] : ".";
+        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
+            !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)) ||
+            !oci_manifest_parse(json, &manifest, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        free(json);
+        if (manifest.manifest_count != 0)
+        {
+            oci_descriptor_t selected;
+            oci_reference_t child_reference;
+            char *selected_json;
+            oci_manifest_t selected_manifest;
+
+            if (!oci_manifest_select(&manifest, NULL, NULL, &selected, error, sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", error);
+                exit(EXIT_FAILURE);
+            }
+            memset(&child_reference, 0, sizeof(child_reference));
+            child_reference.registry = oras_strdup(reference.registry);
+            child_reference.repository = oras_strdup(reference.repository);
+            child_reference.digest = oras_strdup(selected.digest);
+            oras_free_descriptor(&selected);
+            if (!oci_registry_fetch_manifest(&child_reference, &selected_json, error, sizeof(error)) ||
+                !oci_manifest_parse(selected_json, &selected_manifest, error, sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", error);
+                exit(EXIT_FAILURE);
+            }
+            free(selected_json);
+            oras_free_reference(&child_reference);
+            oras_free_manifest(&manifest);
+            manifest = selected_manifest;
+        }
+        if (!riscos_fileset_extract(&manifest,
+                                    directory,
+                                    pull_fetch_blob,
+                                    &reference,
+                                    error,
+                                    sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        oras_free_manifest(&manifest);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "push") == 0 && argc >= 4)
+    {
+        oci_reference_t reference;
+        riscos_fileset_entry_t *entries;
+        size_t entry_count;
+        oci_manifest_t manifest;
+        char *json;
+        int i;
+
+        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
+            !riscos_fileset_plan((const char *const *)&argv[3],
+                                 (size_t)(argc - 3),
+                                 &entries,
+                                 &entry_count,
+                                 error,
+                                 sizeof(error)) ||
+            !riscos_fileset_manifest_from_entries(entries,
+                                                  entry_count,
+                                                  &manifest,
+                                                  error,
+                                                  sizeof(error)) ||
+            !oci_manifest_write(&manifest, &json, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        for (i = 0; i < (int)entry_count; ++i)
+        {
+            FILE *fp;
+            unsigned char *data;
+            size_t size;
+
+            fp = fopen(entries[i].source_path, "rb");
+            if (fp == NULL)
+            {
+                fprintf(stderr, "Unable to reopen '%s'\n", entries[i].source_path);
+                exit(EXIT_FAILURE);
+            }
+            size = entries[i].descriptor.size;
+            data = malloc(size == 0 ? 1 : size);
+            if (data == NULL)
+            {
+                fprintf(stderr, "No memory for blob upload\n");
+                exit(EXIT_FAILURE);
+            }
+            if (size != 0)
+            {
+                fread(data, 1, size, fp);
+            }
+            fclose(fp);
+            if (!oci_registry_push_blob(&reference,
+                                        data,
+                                        size,
+                                        entries[i].descriptor.digest,
+                                        error,
+                                        sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", error);
+                exit(EXIT_FAILURE);
+            }
+            free(data);
+        }
+        if (!oci_registry_push_manifest(&reference, json, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        free(json);
+        oras_free_manifest(&manifest);
+        riscos_fileset_free_entries(entries, entry_count);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+
+    print_usage();
+    exit(EXIT_FAILURE);
+}

@@ -1,0 +1,31 @@
+/*******************************************************************
+ * File:        oci_manifest
+ * Purpose:     OCI manifest and reference handling
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef OCI_MANIFEST_H
+#define OCI_MANIFEST_H
+
+#include "oras_types.h"
+
+int oci_parse_reference(const char *text,
+                        oci_reference_t *reference,
+                        char *error,
+                        size_t error_size);
+int oci_manifest_parse(const char *json,
+                       oci_manifest_t *manifest,
+                       char *error,
+                       size_t error_size);
+int oci_manifest_write(const oci_manifest_t *manifest,
+                       char **json_out,
+                       char *error,
+                       size_t error_size);
+int oci_manifest_select(oci_manifest_t *manifest,
+                        const char *platform,
+                        const char *manifest_digest,
+                        oci_descriptor_t *selected,
+                        char *error,
+                        size_t error_size);
+
+#endif

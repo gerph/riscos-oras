@@ -1,0 +1,17 @@
+/*******************************************************************
+ * File:        url_fetch
+ * Purpose:     URL Fetcher transport wrapper for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef URL_FETCH_H
+#define URL_FETCH_H
+
+#include "oras_types.h"
+
+int url_fetch_execute(const url_fetch_request_t *request,
+                      url_fetch_response_t *response,
+                      char *error,
+                      size_t error_size);
+
+#endif

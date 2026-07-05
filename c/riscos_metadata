@@ -1,0 +1,266 @@
+/*******************************************************************
+ * File:        riscos_metadata
+ * Purpose:     RISC OS file metadata handling for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "RISC_OSLib/os.h"
+
+#include "oras_types.h"
+#include "riscos_metadata.h"
+
+#define RISCOS_TYPED_LOAD_PREFIX 0xFFF00000U
+#define RISCOS_SWI_OS_FILE 0x00000008
+
+static int parse_hex_field(const char *text,
+                           size_t digits,
+                           uint32_t *value_out,
+                           char *error,
+                           size_t error_size)
+{
+    size_t i;
+    uint32_t value;
+    char ch;
+
+    if (strlen(text) != digits)
+    {
+        oras_set_error(error, error_size, "Expected %u hex digits", (unsigned int)digits);
+        return 0;
+    }
+    value = 0;
+    for (i = 0; i < digits; ++i)
+    {
+        ch = text[i];
+        value <<= 4;
+        if (ch >= '0' && ch <= '9')
+        {
+            value |= (uint32_t)(ch - '0');
+        }
+        else if (ch >= 'A' && ch <= 'F')
+        {
+            value |= (uint32_t)(ch - 'A' + 10);
+        }
+        else if (ch >= 'a' && ch <= 'f')
+        {
+            value |= (uint32_t)(ch - 'a' + 10);
+        }
+        else
+        {
+            oras_set_error(error, error_size, "Invalid hex value '%s'", text);
+            return 0;
+        }
+    }
+    *value_out = value;
+    return 1;
+}
+
+static void metadata_from_filename(const char *path, riscos_file_meta_t *meta)
+{
+    const char *comma;
+    unsigned int value;
+
+    comma = strrchr(path, ',');
+    if (comma != NULL && strlen(comma + 1) == 3)
+    {
+        if (sscanf(comma + 1, "%x", &value) == 1)
+        {
+            meta->has_filetype = true;
+            meta->filetype = value & 0xFFFU;
+        }
+    }
+}
+
+int riscos_metadata_read(const char *path,
+                         riscos_file_meta_t *meta,
+                         char *error,
+                         size_t error_size)
+{
+    os_filestr info;
+    os_error *oserr;
+
+    memset(meta, 0, sizeof(*meta));
+    memset(&info, 0, sizeof(info));
+    info.action = 5;
+    info.name = (char *)path;
+    oserr = os_file(&info);
+    if (oserr != NULL)
+    {
+        metadata_from_filename(path, meta);
+        if (!meta->has_filetype)
+        {
+            oras_set_error(error, error_size, "Unable to read metadata for '%s': %s",
+                           path, oserr->errmess);
+            return 0;
+        }
+        return 1;
+    }
+    meta->has_loadexec = true;
+    meta->loadaddr = (uint32_t)info.loadaddr;
+    meta->execaddr = (uint32_t)info.execaddr;
+    meta->has_attrs = true;
+    meta->attrs = (uint32_t)info.end;
+    if (((uint32_t)info.loadaddr & 0xFFF00000U) == RISCOS_TYPED_LOAD_PREFIX)
+    {
+        meta->has_filetype = true;
+        meta->filetype = ((uint32_t)info.loadaddr >> 8) & 0xFFFU;
+    }
+    else
+    {
+        metadata_from_filename(path, meta);
+    }
+    return 1;
+}
+
+int riscos_metadata_apply(const char *path,
+                          const riscos_file_meta_t *meta,
+                          char *error,
+                          size_t error_size)
+{
+    os_error *oserr;
+    os_filestr info;
+    os_regset regs;
+
+    if (meta->has_loadexec)
+    {
+        memset(&info, 0, sizeof(info));
+        info.action = 1;
+        info.name = (char *)path;
+        info.loadaddr = (int)meta->loadaddr;
+        info.execaddr = (int)meta->execaddr;
+        info.end = meta->has_attrs ? (int)meta->attrs : 0;
+        oserr = os_file(&info);
+        if (oserr != NULL)
+        {
+            oras_set_error(error, error_size, "Unable to apply load/exec to '%s': %s",
+                           path, oserr->errmess);
+            return 0;
+        }
+    }
+    else if (meta->has_filetype)
+    {
+        memset(&regs, 0, sizeof(regs));
+        regs.r[0] = 18;
+        regs.r[1] = (int)path;
+        regs.r[2] = (int)meta->filetype;
+        oserr = os_swix(RISCOS_SWI_OS_FILE | os_X, &regs);
+        if (oserr != NULL)
+        {
+            oras_set_error(error, error_size, "Unable to apply filetype to '%s': %s",
+                           path, oserr->errmess);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int riscos_metadata_to_annotations(const riscos_file_meta_t *meta,
+                                   oras_annotation_t **annotations,
+                                   size_t *annotation_count,
+                                   char *error,
+                                   size_t error_size)
+{
+    char value[16];
+
+    if (meta->has_filetype)
+    {
+        sprintf(value, "%03X", meta->filetype);
+        if (!oras_set_annotation(annotations, annotation_count,
+                                 ORAS_ANNOTATION_FILETYPE, value,
+                                 error, error_size))
+        {
+            return 0;
+        }
+    }
+    if (meta->has_loadexec)
+    {
+        sprintf(value, "%08X", meta->loadaddr);
+        if (!oras_set_annotation(annotations, annotation_count,
+                                 ORAS_ANNOTATION_LOADADDR, value,
+                                 error, error_size))
+        {
+            return 0;
+        }
+        sprintf(value, "%08X", meta->execaddr);
+        if (!oras_set_annotation(annotations, annotation_count,
+                                 ORAS_ANNOTATION_EXECADDR, value,
+                                 error, error_size))
+        {
+            return 0;
+        }
+    }
+    if (meta->has_attrs)
+    {
+        sprintf(value, "0x%08X", meta->attrs);
+        if (!oras_set_annotation(annotations, annotation_count,
+                                 ORAS_ANNOTATION_ATTR, value,
+                                 error, error_size))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int riscos_metadata_from_annotations(const oras_annotation_t *annotations,
+                                     size_t annotation_count,
+                                     riscos_file_meta_t *meta,
+                                     char *error,
+                                     size_t error_size)
+{
+    const char *value;
+    uint32_t parsed;
+
+    memset(meta, 0, sizeof(*meta));
+    value = oras_find_annotation(annotations, annotation_count, ORAS_ANNOTATION_FILETYPE);
+    if (value != NULL)
+    {
+        if (!parse_hex_field(value, 3, &parsed, error, error_size))
+        {
+            return 0;
+        }
+        meta->has_filetype = true;
+        meta->filetype = parsed & 0xFFFU;
+    }
+    value = oras_find_annotation(annotations, annotation_count, ORAS_ANNOTATION_LOADADDR);
+    if (value != NULL)
+    {
+        if (!parse_hex_field(value, 8, &parsed, error, error_size))
+        {
+            return 0;
+        }
+        meta->has_loadexec = true;
+        meta->loadaddr = parsed;
+    }
+    value = oras_find_annotation(annotations, annotation_count, ORAS_ANNOTATION_EXECADDR);
+    if (value != NULL)
+    {
+        if (!parse_hex_field(value, 8, &parsed, error, error_size))
+        {
+            return 0;
+        }
+        meta->has_loadexec = true;
+        meta->execaddr = parsed;
+    }
+    value = oras_find_annotation(annotations, annotation_count, ORAS_ANNOTATION_ATTR);
+    if (value != NULL)
+    {
+        if (strncmp(value, "0x", 2) == 0 || strncmp(value, "0X", 2) == 0)
+        {
+            if (!parse_hex_field(value + 2, 8, &parsed, error, error_size))
+            {
+                return 0;
+            }
+        }
+        else
+        {
+            parsed = (uint32_t)strtoul(value, NULL, 0);
+        }
+        meta->has_attrs = true;
+        meta->attrs = parsed;
+    }
+    return 1;
+}

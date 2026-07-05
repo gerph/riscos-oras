@@ -1,0 +1,61 @@
+#!/usr/bin/env riscos-amu -f
+# Makefile for oras
+#
+
+#
+# Program specific options:
+#
+COMPONENT  = oras
+
+# Specifies additional targets for startup
+#INITTARGET = inittarget
+
+# Specifies additional targets for clean
+#CLEANTARGET = cleantarget
+
+# aif, for linked objects
+# aof, for a partially linked AOF object
+# util, for utilities built with objasm
+# basic, for BASIC tools
+TYPE       = aif
+
+# The file to output (defaults ${COMPONENT})
+#TARGET = <filename>
+
+# Comma-separated list of paths to use for includes, such as:
+#	C:LibName.
+INCLUDES   =
+
+# Space separated list of defines to set, eg -DDEBUG
+CDEFINES   =
+
+# Space separated list of libraries to link against, eg C:LibName.o.libLibName
+LIBS       = C:RISC_OSLib.o.risc_oslib \
+             C:URL.o.libURLFetch \
+             C:cJSON.o.libcJSON \
+             ${CLIB}
+
+# Objects to build, using the format o.<name> (will be varied for build type)
+OBJS       = o.main \
+             o.oras_types \
+             o.sha256 \
+             o.oci_manifest \
+             o.riscos_metadata \
+             o.riscos_fileset \
+             o.url_fetch \
+             o.oci_registry \
+             o.selftest
+
+# Space separated list of XML files for building documentation.
+#DOCSRC = <prm-in-xml-sources>
+
+
+include LibraryCommand
+
+.PHONY: test
+test: all
+	riscos-build-run aif32/oras,ff8 --command "oras --self-test"
+
+
+#---------------------------------------------------------------------------
+# Dynamic dependencies:

@@ -1,0 +1,128 @@
+/*******************************************************************
+ * File:        oras_types
+ * Purpose:     Shared oras data types and helpers
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef ORAS_TYPES_H
+#define ORAS_TYPES_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#define ORAS_ARTIFACT_TYPE "application/vnd.riscos.fileset.v1"
+#define ORAS_MANIFEST_MEDIA_TYPE "application/vnd.oci.image.manifest.v1+json"
+#define ORAS_INDEX_MEDIA_TYPE "application/vnd.oci.image.index.v1+json"
+#define ORAS_DESCRIPTOR_MEDIA_TYPE "application/octet-stream"
+#define ORAS_FILES_FORMAT "fileset-v1"
+
+#define ORAS_ANNOTATION_TITLE "org.opencontainers.image.title"
+#define ORAS_ANNOTATION_FILETYPE "org.riscos.filetype"
+#define ORAS_ANNOTATION_LOADADDR "org.riscos.loadaddr"
+#define ORAS_ANNOTATION_EXECADDR "org.riscos.execaddr"
+#define ORAS_ANNOTATION_ATTR "org.riscos.attr"
+#define ORAS_ANNOTATION_FORMAT "org.riscos.artifact.format"
+
+typedef struct oras_annotation_s
+{
+    char *key;
+    char *value;
+} oras_annotation_t;
+
+typedef struct oci_descriptor_s
+{
+    char *media_type;
+    char *digest;
+    size_t size;
+    oras_annotation_t *annotations;
+    size_t annotation_count;
+    char *platform_os;
+    char *platform_arch;
+} oci_descriptor_t;
+
+typedef struct oci_reference_s
+{
+    char *registry;
+    char *repository;
+    char *tag;
+    char *digest;
+} oci_reference_t;
+
+typedef struct oci_manifest_s
+{
+    int schema_version;
+    char *media_type;
+    char *artifact_type;
+    oras_annotation_t *annotations;
+    size_t annotation_count;
+    oci_descriptor_t *layers;
+    size_t layer_count;
+    oci_descriptor_t *manifests;
+    size_t manifest_count;
+} oci_manifest_t;
+
+typedef struct riscos_file_meta_s
+{
+    bool has_filetype;
+    unsigned int filetype;
+    bool has_loadexec;
+    uint32_t loadaddr;
+    uint32_t execaddr;
+    bool has_attrs;
+    uint32_t attrs;
+} riscos_file_meta_t;
+
+typedef struct riscos_fileset_entry_s
+{
+    char *source_path;
+    char *relative_path;
+    oci_descriptor_t descriptor;
+    riscos_file_meta_t meta;
+} riscos_fileset_entry_t;
+
+typedef struct url_fetch_header_s
+{
+    char *name;
+    char *value;
+} url_fetch_header_t;
+
+typedef struct url_fetch_request_s
+{
+    char *url;
+    char *method;
+    url_fetch_header_t *headers;
+    size_t header_count;
+    unsigned char *body;
+    size_t body_size;
+} url_fetch_request_t;
+
+typedef struct url_fetch_response_s
+{
+    int status_code;
+    url_fetch_header_t *headers;
+    size_t header_count;
+    unsigned char *body;
+    size_t body_size;
+} url_fetch_response_t;
+
+void oras_set_error(char *buffer, size_t buffer_size, const char *format, ...);
+char *oras_strdup(const char *text);
+char *oras_strndup(const char *text, size_t length);
+void *oras_reallocarray(void *ptr, size_t count, size_t size);
+void oras_free_annotations(oras_annotation_t *annotations, size_t count);
+void oras_free_descriptor(oci_descriptor_t *descriptor);
+void oras_free_manifest(oci_manifest_t *manifest);
+void oras_free_reference(oci_reference_t *reference);
+void oras_free_response(url_fetch_response_t *response);
+const char *oras_find_annotation(const oras_annotation_t *annotations,
+                                 size_t count,
+                                 const char *key);
+int oras_set_annotation(oras_annotation_t **annotations,
+                        size_t *count,
+                        const char *key,
+                        const char *value,
+                        char *error,
+                        size_t error_size);
+
+#endif

@@ -1,0 +1,359 @@
+/*******************************************************************
+ * File:        oci_registry
+ * Purpose:     OCI registry client support for oras
+ * Author:      Gerph
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "oras_types.h"
+#include "url_fetch.h"
+#include "oci_registry.h"
+
+static int ascii_tolower(int ch)
+{
+    if (ch >= 'A' && ch <= 'Z')
+    {
+        return ch + ('a' - 'A');
+    }
+    return ch;
+}
+
+static int equal_casefold(const char *left, const char *right)
+{
+    while (*left != '\0' && *right != '\0')
+    {
+        if (ascii_tolower((unsigned char)*left) != ascii_tolower((unsigned char)*right))
+        {
+            return 0;
+        }
+        ++left;
+        ++right;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static char *build_url(const oci_reference_t *reference,
+                       const char *suffix)
+{
+    size_t length;
+    char *url;
+
+    length = strlen(reference->registry) + strlen(reference->repository) +
+             strlen(suffix) + 16;
+    url = malloc(length);
+    if (url == NULL)
+    {
+        return NULL;
+    }
+    sprintf(url, "https://%s/v2/%s%s", reference->registry, reference->repository, suffix);
+    return url;
+}
+
+static const char *selector_string(const oci_reference_t *reference)
+{
+    return reference->digest != NULL ? reference->digest : reference->tag;
+}
+
+static const char *response_header(const url_fetch_response_t *response,
+                                   const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < response->header_count; ++i)
+    {
+        if (equal_casefold(response->headers[i].name, name))
+        {
+            return response->headers[i].value;
+        }
+    }
+    return NULL;
+}
+
+static int fetch_bytes(const char *url,
+                       const char *accept,
+                       unsigned char **data_out,
+                       size_t *size_out,
+                       char *error,
+                       size_t error_size)
+{
+    url_fetch_header_t headers[1];
+    url_fetch_request_t request;
+    url_fetch_response_t response;
+
+    memset(&request, 0, sizeof(request));
+    request.url = (char *)url;
+    request.method = "GET";
+    if (accept != NULL)
+    {
+        headers[0].name = "Accept";
+        headers[0].value = (char *)accept;
+        request.headers = headers;
+        request.header_count = 1;
+    }
+    if (!url_fetch_execute(&request, &response, error, error_size))
+    {
+        return 0;
+    }
+    if (response.status_code < 200 || response.status_code >= 300)
+    {
+        oras_set_error(error, error_size, "HTTP %d from %s", response.status_code, url);
+        oras_free_response(&response);
+        return 0;
+    }
+    *data_out = response.body;
+    *size_out = response.body_size;
+    response.body = NULL;
+    oras_free_response(&response);
+    return 1;
+}
+
+static char *resolve_location(const oci_reference_t *reference,
+                              const char *location)
+{
+    char *resolved;
+
+    if (strncmp(location, "http://", 7) == 0 || strncmp(location, "https://", 8) == 0)
+    {
+        return oras_strdup(location);
+    }
+    if (location[0] == '/')
+    {
+        resolved = malloc(strlen(reference->registry) + strlen(location) + 9);
+        if (resolved == NULL)
+        {
+            return NULL;
+        }
+        sprintf(resolved, "https://%s%s", reference->registry, location);
+        return resolved;
+    }
+    return build_url(reference, location);
+}
+
+int oci_registry_fetch_manifest(const oci_reference_t *reference,
+                                char **json_out,
+                                char *error,
+                                size_t error_size)
+{
+    char *url;
+    char suffix[1024];
+    unsigned char *data;
+    size_t size;
+
+    sprintf(suffix, "/manifests/%s", selector_string(reference));
+    url = build_url(reference, suffix);
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest URL");
+        return 0;
+    }
+    if (!fetch_bytes(url,
+                     ORAS_MANIFEST_MEDIA_TYPE ", " ORAS_INDEX_MEDIA_TYPE ", application/vnd.docker.distribution.manifest.v2+json",
+                     &data,
+                     &size,
+                     error,
+                     error_size))
+    {
+        free(url);
+        return 0;
+    }
+    free(url);
+    *json_out = oras_strndup((const char *)data, size);
+    free(data);
+    if (*json_out == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest text");
+        return 0;
+    }
+    return 1;
+}
+
+int oci_registry_fetch_blob(const oci_reference_t *reference,
+                            const char *digest,
+                            unsigned char **data_out,
+                            size_t *size_out,
+                            char *error,
+                            size_t error_size)
+{
+    char suffix[1024];
+    char *url;
+    int result;
+
+    sprintf(suffix, "/blobs/%s", digest);
+    url = build_url(reference, suffix);
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for blob URL");
+        return 0;
+    }
+    result = fetch_bytes(url, NULL, data_out, size_out, error, error_size);
+    free(url);
+    return result;
+}
+
+int oci_registry_list_tags(const oci_reference_t *reference,
+                           char **json_out,
+                           char *error,
+                           size_t error_size)
+{
+    char *url;
+    unsigned char *data;
+    size_t size;
+
+    url = build_url(reference, "/tags/list");
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for tags URL");
+        return 0;
+    }
+    if (!fetch_bytes(url, "application/json", &data, &size, error, error_size))
+    {
+        free(url);
+        return 0;
+    }
+    free(url);
+    *json_out = oras_strndup((const char *)data, size);
+    free(data);
+    if (*json_out == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for tags JSON");
+        return 0;
+    }
+    return 1;
+}
+
+int oci_registry_push_blob(const oci_reference_t *reference,
+                           const unsigned char *data,
+                           size_t size,
+                           const char *digest,
+                           char *error,
+                           size_t error_size)
+{
+    char *url;
+    url_fetch_request_t request;
+    url_fetch_response_t response;
+    char *location_url;
+    char upload_url[2048];
+    url_fetch_header_t headers[2];
+    char length_text[32];
+    const char *location;
+
+    url = build_url(reference, "/blobs/uploads/");
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for upload URL");
+        return 0;
+    }
+    memset(&request, 0, sizeof(request));
+    request.url = url;
+    request.method = "POST";
+    if (!url_fetch_execute(&request, &response, error, error_size))
+    {
+        free(url);
+        return 0;
+    }
+    free(url);
+    if (response.status_code != 202)
+    {
+        oras_set_error(error, error_size, "Blob upload start failed with HTTP %d",
+                       response.status_code);
+        oras_free_response(&response);
+        return 0;
+    }
+    location = response_header(&response, "Location");
+    if (location == NULL)
+    {
+        oras_set_error(error, error_size, "Registry did not return upload location");
+        oras_free_response(&response);
+        return 0;
+    }
+    location_url = resolve_location(reference, location);
+    oras_free_response(&response);
+    if (location_url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for upload location");
+        return 0;
+    }
+    sprintf(upload_url, "%s%s%s%s",
+            location_url,
+            strchr(location_url, '?') == NULL ? "?" : "&",
+            "digest=",
+            digest);
+    free(location_url);
+
+    sprintf(length_text, "%u", (unsigned int)size);
+    headers[0].name = "Content-Type";
+    headers[0].value = ORAS_DESCRIPTOR_MEDIA_TYPE;
+    headers[1].name = "Content-Length";
+    headers[1].value = length_text;
+    memset(&request, 0, sizeof(request));
+    request.url = upload_url;
+    request.method = "PUT";
+    request.headers = headers;
+    request.header_count = 2;
+    request.body = (unsigned char *)data;
+    request.body_size = size;
+    if (!url_fetch_execute(&request, &response, error, error_size))
+    {
+        return 0;
+    }
+    if (response.status_code != 201)
+    {
+        oras_set_error(error, error_size, "Blob upload failed with HTTP %d",
+                       response.status_code);
+        oras_free_response(&response);
+        return 0;
+    }
+    oras_free_response(&response);
+    return 1;
+}
+
+int oci_registry_push_manifest(const oci_reference_t *reference,
+                               const char *manifest_json,
+                               char *error,
+                               size_t error_size)
+{
+    char suffix[1024];
+    char *url;
+    url_fetch_request_t request;
+    url_fetch_response_t response;
+    url_fetch_header_t headers[2];
+    char length_text[32];
+
+    sprintf(suffix, "/manifests/%s", selector_string(reference));
+    url = build_url(reference, suffix);
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest URL");
+        return 0;
+    }
+    sprintf(length_text, "%u", (unsigned int)strlen(manifest_json));
+    headers[0].name = "Content-Type";
+    headers[0].value = ORAS_MANIFEST_MEDIA_TYPE;
+    headers[1].name = "Content-Length";
+    headers[1].value = length_text;
+    memset(&request, 0, sizeof(request));
+    request.url = url;
+    request.method = "PUT";
+    request.headers = headers;
+    request.header_count = 2;
+    request.body = (unsigned char *)manifest_json;
+    request.body_size = strlen(manifest_json);
+    if (!url_fetch_execute(&request, &response, error, error_size))
+    {
+        free(url);
+        return 0;
+    }
+    free(url);
+    if (response.status_code < 200 || response.status_code >= 300)
+    {
+        oras_set_error(error, error_size, "Manifest push failed with HTTP %d",
+                       response.status_code);
+        oras_free_response(&response);
+        return 0;
+    }
+    oras_free_response(&response);
+    return 1;
+}
