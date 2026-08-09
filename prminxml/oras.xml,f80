@@ -67,6 +67,10 @@ RISC OS leaf name of each supplied path, so each push must have distinct leaf
 names. For example, <userinput>prminxml.oras/xml</userinput> is stored with
 native name <userinput>oras/xml</userinput> and portable title
 <userinput>oras.xml</userinput>.
+Directory prefixes are not yet preserved, so
+<userinput>aif26.oras</userinput>, <userinput>aif32.oras</userinput> and
+<userinput>aif64.oras</userinput> all collide as <userinput>oras</userinput>.
+Give such files distinct leaf names before pushing them together.
 An OCI index can be pulled when it contains exactly one manifest; an index
 with multiple candidates cannot currently be selected from the command line.
 </p>
@@ -153,6 +157,9 @@ the JSON for human reading before writing it.
 <example>
 <command>*oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff</command>
 </example>
+<example>
+<command>*oras manifest fetch --pretty registry.example.net/charles/demo:1.0</command>
+</example>
 </command-definition>
 
 <command-definition name="oras blob fetch"
@@ -232,6 +239,18 @@ the digest and metadata for each file layer.
 *oras tags registry.example.net/charles/demo
 </extended-example></p>
 </subsection>
+<subsection title="Publishing to and retrieving from GHCR">
+<p>
+Log in once for the registry, then use the GitHub shorthand to associate only
+this artifact with its source repository. Pulling restores the native RISC OS
+filename and recognised metadata below the chosen destination.
+</p>
+<p><extended-example type="pseudo">
+*oras login ghcr.io gerph
+*oras push --source github:gerph/riscos-oras ghcr.io/gerph/riscos-oras:0.02 prminxml.oras/xml
+*oras pull ghcr.io/gerph/riscos-oras:0.02 Work.ORAS
+</extended-example></p>
+</subsection>
 </section>
 </chapter>
 
@@ -239,6 +258,9 @@ the digest and metadata for each file layer.
  <maintainer><email name="Charles Ferguson" address="gerph@gerph.org" /></maintainer>
  <disclaimer><p>&copy; Charles Ferguson, 2026.</p></disclaimer>
  <history>
+  <revision number="3" author="Charles Ferguson" date="09 Aug 2026" title="Fileset usage examples">
+   <change>Documented formatted manifests, GHCR publishing, pulling, and duplicate leaf-name limits.</change>
+  </revision>
   <revision number="2" author="Charles Ferguson" date="09 Aug 2026" title="Registry authentication">
    <change>Documented Docker-compatible login credentials and authentication commands.</change>
   </revision>

@@ -45,6 +45,13 @@ artifact names are the leaf names of the supplied paths, so files with the
 same leaf name cannot be pushed together. RISC OS filenames such as `oras/xml`
 are retained when pulled; the OCI title uses its portable form, `oras.xml`.
 
+The current fileset format records one leaf name for each explicit input file;
+it does not retain the input directory prefix. For example,
+`aif26.oras`, `aif32.oras`, and `aif64.oras` all have the leaf name `oras` and
+cannot be pushed together. Give architecture variants distinct leaf names
+before pushing, such as `oras-26`, `oras-32`, and `oras-64`; otherwise `push`
+reports `Duplicate input leaf name 'oras'`.
+
 Each layer records the RISC OS filetype, load address, execution address and
 access attributes as OCI annotations. This metadata is restored on pull.
 
@@ -79,10 +86,20 @@ Retrieve that fileset beneath `Work.Demo`:
 *oras pull registry.example.net/charles/demo:1.0 Work.Demo
 ```
 
-Inspect the manifest and obtain a blob whose digest was listed in it:
+Inspect the raw manifest, or print an indented version for people to read:
 
 ```text
 *oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff
+*oras manifest fetch --pretty registry.example.net/charles/demo:1.0
+*oras manifest fetch --pretty ghcr.io/gerph/riscos-oras:0.02
+```
+
+The file form writes the registry's JSON unchanged. The screen form always
+ends with a newline; `--pretty` is the only option that reformats it.
+
+Obtain a blob whose digest was listed in the manifest:
+
+```text
 *oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff
 ```
 
@@ -103,8 +120,17 @@ Secret for gerph at ghcr.io:
 Associate an artifact with its GitHub source repository:
 
 ```text
-*oras push --source github:gerph/riscos-oras ghcr.io/gerph/riscos-oras:0.03 prminxml.oras/xml
+*oras push --source github:gerph/riscos-oras ghcr.io/gerph/riscos-oras:0.02 prminxml.oras/xml
 ```
+
+Retrieve that artifact. The native RISC OS filename is restored below the
+destination, including its filetype and other recognised metadata:
+
+```text
+*oras pull ghcr.io/gerph/riscos-oras:0.02 Work.ORAS
+```
+
+For the artifact above, the restored file is `Work.ORAS.oras/xml`.
 
 The `--self-test` command performs local, non-network checks of reference
 handling, fileset metadata and safe extraction paths.

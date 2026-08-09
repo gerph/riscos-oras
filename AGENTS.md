@@ -11,10 +11,12 @@ RISC OS metadata on pull.
 Primary commands:
 
 - `*oras pull <reference> [<directory>]`
-- `*oras push <reference> <path>...`
-- `*oras manifest fetch <reference> [<file>]`
+- `*oras push [--source <uri|github:owner/repository>] <reference> <path>...`
+- `*oras manifest fetch [--pretty] <reference> [<file>]`
 - `*oras blob fetch <reference> <digest> [<file>]`
 - `*oras tags <repository>`
+- `*oras login <registry> <username>`
+- `*oras logout <registry>`
 
 ## Artifact format
 
@@ -29,7 +31,9 @@ Manifest conventions:
 Per-file conventions:
 
 - blob bytes are the exact file contents
-- `org.opencontainers.image.title` stores the relative output path
+- blob media type is `application/riscos`, with registered metadata parameters
+- `org.opencontainers.image.title` stores a portable relative output path
+- `org.riscos.filename` preserves the native RISC OS leaf name
 - RISC OS metadata is stored in descriptor annotations
 
 Supported metadata annotations:
@@ -38,6 +42,10 @@ Supported metadata annotations:
 - `org.riscos.loadaddr`
 - `org.riscos.execaddr`
 - `org.riscos.attr`
+
+Push currently records the native leaf name only; it does not preserve input
+directory prefixes. Inputs with the same leaf name must be rejected with a
+clear error rather than silently overwriting one another.
 
 Pull behaviour:
 
@@ -60,6 +68,7 @@ Planned reusable modules:
 
 - `url_fetch`: URL Fetcher wrapper and HTTP-style response parsing
 - `oci_registry`: reference parsing and anonymous registry operations
+- `oci_auth`: Docker-compatible credential storage and challenge handling
 - `oci_manifest`: manifest/index parsing and writing via `cJSON`
 - `riscos_metadata`: read/apply/validate RISC OS metadata
 - `riscos_fileset`: convert local files to descriptors and extract filesets
@@ -67,10 +76,11 @@ Planned reusable modules:
 
 ## Scope notes
 
-In scope for the first cut:
+In scope:
 
-- anonymous/public registry access
+- anonymous, Basic and Bearer-authenticated registry access
 - manifest fetch
+- formatted manifest fetch on request
 - blob fetch
 - tags listing
 - fileset push planning
@@ -79,12 +89,12 @@ In scope for the first cut:
 
 Deferred for later:
 
-- authenticated registry access
 - delete/copy/referrers
 - richer manifest config metadata
+- recursive input-directory preservation and multi-manifest architecture indexes
 
 ## Test intent
 
-The project should gain a local `test` target backed by an internal
-`--self-test` path so the core behaviour can be exercised without live
-registry dependencies.
+The project has a local `--self-test` path for non-network behaviour and a
+local fake-registry smoke test for anonymous, Basic and Bearer workflows. Do
+not add live registry credentials to CI.
