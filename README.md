@@ -36,11 +36,15 @@ are created as necessary and recognised file type, load address, execution
 address and attributes are restored. Stored absolute paths and `..` traversal
 are rejected.
 
-`push` uploads each supplied file as an individual blob and publishes a
-`application/vnd.riscos.fileset.v1` manifest. Input directories are not yet
-accepted: list each file explicitly. The stored artifact names are the leaf
-names of the supplied paths, so files with the same leaf name cannot be pushed
-together.
+`push` uploads each supplied file as an individual `application/riscos` blob
+and publishes a `application/vnd.riscos.fileset.v1` manifest. Input directories
+are not yet accepted: list each file explicitly. The stored artifact names are
+the leaf names of the supplied paths, so files with the same leaf name cannot
+be pushed together. RISC OS filenames such as `oras/xml` are retained when
+pulled; the OCI title uses its portable form, `oras.xml`.
+
+Each layer records the RISC OS filetype, load address, execution address and
+access attributes as OCI annotations. This metadata is restored on pull.
 
 Use `--source` to attach an OCI source annotation to a particular artifact.
 For GitHub repositories, `github:<owner>/<repository>` expands to the matching

@@ -32,8 +32,11 @@ ORAS filesets use an OCI image manifest with artifact type
 <userinput>application/vnd.riscos.fileset.v1</userinput> and the manifest
 annotation <userinput>org.riscos.artifact.format = fileset-v1</userinput>.
 Each layer represents exactly one file; its blob is the unmodified file
-contents and its <userinput>org.opencontainers.image.title</userinput>
-annotation is the relative output path.
+contents with media type <userinput>application/riscos</userinput>. Its
+<userinput>org.opencontainers.image.title</userinput> annotation is a portable
+relative output path. The accompanying <userinput>org.riscos.filename</userinput>
+annotation preserves the native RISC OS leaf name, including a suffix such as
+<userinput>/xml</userinput>.
 </p>
 <p>
 When requested with <userinput>--source</userinput>, published manifests include
@@ -55,7 +58,10 @@ the requested output directory.
 </p>
 <p>
 Push arguments must be files, not directories. The stored output name is the
-leaf name of each supplied path, so each push must have distinct leaf names.
+RISC OS leaf name of each supplied path, so each push must have distinct leaf
+names. For example, <userinput>prminxml.oras/xml</userinput> is stored with
+native name <userinput>oras/xml</userinput> and portable title
+<userinput>oras.xml</userinput>.
 An OCI index can be pulled when it contains exactly one manifest; an index
 with multiple candidates cannot currently be selected from the command line.
 </p>
@@ -112,9 +118,9 @@ metadata restored. Unsafe stored paths and duplicate output paths are refused.
 <parameter name="uri">An OCI source URI, or github:owner/repository.</parameter>
 <use>
 <p>
-Uploads each source file as a separate OCI blob, records the file metadata
-where available, and publishes the fileset manifest. Directories are not
-accepted; provide every file explicitly.
+Uploads each source file as a separate <userinput>application/riscos</userinput>
+OCI blob, records the file metadata where available, and publishes the
+fileset manifest. Directories are not accepted; provide every file explicitly.
 The optional source URI is recorded as org.opencontainers.image.source; it is
 not inferred from the target registry or repository.
 </p>
