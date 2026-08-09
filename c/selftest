@@ -245,8 +245,11 @@ static void test_fileset_plan_and_extract(void)
     char error[256];
     FILE *fp;
     const char *paths[1];
+    const char *duplicate_paths[2];
     riscos_fileset_entry_t *entries;
+    riscos_fileset_entry_t *duplicate_entries;
     size_t entry_count;
+    size_t duplicate_entry_count;
     oci_manifest_t manifest;
     const char *source_annotation;
     test_blob_t blobs[2];
@@ -278,6 +281,20 @@ static void test_fileset_plan_and_extract(void)
                   "readme,fff") == 0,
            "planned native filename");
     EXPECT(entries[0].meta.has_filetype, "planned metadata filetype");
+
+    duplicate_paths[0] = paths[0];
+    duplicate_paths[1] = paths[0];
+    duplicate_entries = NULL;
+    duplicate_entry_count = 0;
+    EXPECT(!riscos_fileset_plan(duplicate_paths,
+                                2,
+                                &duplicate_entries,
+                                &duplicate_entry_count,
+                                error,
+                                sizeof(error)),
+           "reject duplicate input leaf name");
+    EXPECT(strcmp(error, "Duplicate input leaf name 'readme,fff'") == 0,
+           "duplicate input leaf name error");
 
     EXPECT(riscos_fileset_manifest_from_entries(entries, entry_count,
                                                 "https://github.com/example/project",

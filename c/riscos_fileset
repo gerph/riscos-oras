@@ -312,8 +312,14 @@ int riscos_fileset_plan(const char *const *paths,
             riscos_fileset_free_entries(entries, entry_count);
             return 0;
         }
-        if (has_duplicate_relative_path(entries, entry_count, sanitised) ||
-            !append_entry(&entries, &entry_count, paths[i], sanitised, error, error_size))
+        if (has_duplicate_relative_path(entries, entry_count, sanitised))
+        {
+            oras_set_error(error, error_size, "Duplicate input leaf name '%s'", sanitised);
+            free(sanitised);
+            riscos_fileset_free_entries(entries, entry_count);
+            return 0;
+        }
+        if (!append_entry(&entries, &entry_count, paths[i], sanitised, error, error_size))
         {
             free(sanitised);
             riscos_fileset_free_entries(entries, entry_count);
