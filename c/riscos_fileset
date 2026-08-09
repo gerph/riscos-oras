@@ -402,12 +402,13 @@ static int create_parent_directories(const char *path,
         /* Temporarily truncate at each '/' in turn so each ancestor
            directory is created before its children */
         *slash = '\0';
-        if (copy[0] != '\0' && path_object_type(copy) == 0)
+        if (copy[0] != '\0' && strcmp(copy, ".") != 0 &&
+            path_object_type(copy) == 0)
         {
             if (!oras_os_file_create_directory(copy))
             {
-                free(copy);
                 oras_set_error(error, error_size, "Unable to create directory '%s'", copy);
+                free(copy);
                 return 0;
             }
         }
