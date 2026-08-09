@@ -1,0 +1,137 @@
+/*******************************************************************
+ * File:        os
+ * Purpose:     OS interface veneers
+ * Author:      Gerph
+ * Date:        6 July 2025
+ ******************************************************************/
+
+#ifndef OS_H
+#define OS_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "kernel.h"
+
+#define VarType_String          0
+#define VarType_Number          1
+#define VarType_Macro           2
+#define VarType_Expanded        3   // given to Read, this always returns a string
+                                    // given to Set,  this means evaluate an expression
+#define VarType_LiteralString   4   // Only valid for Set - sets the string as is (no
+                                    // GSTrans)
+#define VarType_Evaluated       5   // given to Read, this means evaluate expression value
+                                    // given to Set,  this always stores a string
+#define VarType_Code            16
+
+#define ErrorNumber_VarNoRroom   (0x123)
+#define ErrorNumber_VarCantFind  (0x124)
+#define ErrorNumber_VarTooLong   (0x125)
+#define ErrorNumber_BuffOverflow (0x1e4)
+
+/*************************************************** Gerph *********
+ Function:      os_readvarval
+ Description:   Read a variable value
+ Parameters:    var-> the variable name to read
+                buf-> the buffer to write to
+                buflen = length of the buffer, or -1 to just read length
+                context = the context for the call, or 0 for first call
+                type = the variable type to read (3 to expand on return)
+                sizep-> where to store the size that was read
+                contextp-> where to store the context value
+                typep-> where to store the type
+ Returns:       error pointer, or NULL if ok
+ ******************************************************************/
+_kernel_oserror *os_readvarval(const char *var, char *buf, int buflen, uint32_t context, int type,
+                               uint32_t *contextp, int32_t *sizep, int32_t *typep);
+
+/*************************************************** Gerph *********
+ Function:      os_cli
+ Description:   Run a CLI command
+ Parameters:    cli-> the command line to run
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_cli(const char *cli);
+
+
+/*************************************************** Gerph *********
+ Function:      escape_check
+ Description:   Check whether escape is pending
+ Parameters:    none
+ Returns:       true if pending, false if not
+ ******************************************************************/
+bool escape_check(void);
+
+/*************************************************** Gerph *********
+ Function:      escape_acknowledge
+ Description:   Acknowledge the escape conditions
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
+void escape_acknowledge(void);
+
+/*************************************************** Gerph *********
+ Function:      os_generateerror
+ Description:   Raise an error to the environment
+ Parameters:    err -> the error to raise
+ Returns:       never
+ ******************************************************************/
+void os_generateerror(_kernel_oserror *err);
+
+/*************************************************** Gerph *********
+ Function:      os_exit
+ Description:   Exit the application
+ Parameters:    none
+ Returns:       never
+ ******************************************************************/
+void os_exit(void);
+
+/*************************************************** Gerph *********
+ Function:      os_readline
+ Description:   Call OS_ReadLine for input
+ Parameters:    line-> line to read
+                len = max length including terminator
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_readline(char *line, int len);
+
+
+#ifdef __riscos64
+#include "swis_os.h"
+#else
+/*************************************************** Gerph *********
+ Function:      os_write0
+ Description:   Write a 0-terminated string
+ Parameters:    s-> what to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_write0(const char *s);
+
+/*************************************************** Gerph *********
+ Function:      os_writec
+ Description:   Write a character to output stream
+ Parameters:    s-> what to write
+                size = number to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_writec(char c);
+
+/*************************************************** Gerph *********
+ Function:      os_writen
+ Description:   Write a number of characters to the output stream
+ Parameters:    s-> what to write
+                size = number to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_writen(const char *s, int size);
+
+/*************************************************** Gerph *********
+ Function:      os_newline
+ Description:   Write a newline, whatever that means
+ Parameters:    none
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_newline(void);
+#endif
+
+#endif
