@@ -301,6 +301,7 @@ void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
 
 int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                                          size_t entry_count,
+                                         const char *source_uri,
                                          oci_manifest_t *manifest,
                                          char *error,
                                          size_t error_size)
@@ -322,6 +323,17 @@ int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                              &manifest->annotation_count,
                              ORAS_ANNOTATION_FORMAT,
                              ORAS_FILES_FORMAT,
+                             error,
+                             error_size))
+    {
+        oras_free_manifest(manifest);
+        return 0;
+    }
+    if (source_uri != NULL &&
+        !oras_set_annotation(&manifest->annotations,
+                             &manifest->annotation_count,
+                             ORAS_ANNOTATION_SOURCE,
+                             source_uri,
                              error,
                              error_size))
     {

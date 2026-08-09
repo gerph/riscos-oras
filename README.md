@@ -22,7 +22,7 @@ Run `*oras` with no arguments to display the command syntax.
 
 ```text
 *oras pull <reference> [<directory>]
-*oras push <reference> <path>...
+*oras push [--source <uri|github:owner/repository>] <reference> <path>...
 *oras manifest fetch <reference> [<file>]
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
@@ -41,6 +41,11 @@ are rejected.
 accepted: list each file explicitly. The stored artifact names are the leaf
 names of the supplied paths, so files with the same leaf name cannot be pushed
 together.
+
+Use `--source` to attach an OCI source annotation to a particular artifact.
+For GitHub repositories, `github:<owner>/<repository>` expands to the matching
+`https://github.com/...` URI, allowing GHCR to associate that artifact with its
+source repository. Source metadata is never added unless requested.
 
 `manifest fetch` writes the raw manifest JSON to standard output, or to its
 optional file argument. `blob fetch` similarly writes a named blob. `tags`
@@ -85,6 +90,12 @@ Log in before publishing to GHCR:
 *oras login ghcr.io gerph
 Secret for gerph at ghcr.io:
 *oras push ghcr.io/gerph/riscos-oras:1.0 Apps.Demo,ff8
+```
+
+Associate an artifact with its GitHub source repository:
+
+```text
+*oras push --source github:gerph/riscos-oras ghcr.io/gerph/riscos-oras:0.03 prminxml.oras/xml
 ```
 
 The `--self-test` command performs local, non-network checks of reference

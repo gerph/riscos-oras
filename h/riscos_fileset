@@ -39,6 +39,7 @@ int riscos_fileset_plan(const char *const *paths,
  Description:   Free a fileset entries array and its contents
  Parameters:    entries-> entries array to free
                 entry_count = number of entries in the array
+                source_uri-> optional OCI source annotation URI
  Returns:       none
  ******************************************************************/
 void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
@@ -56,6 +57,7 @@ void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
  ******************************************************************/
 int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                                          size_t entry_count,
+                                         const char *source_uri,
                                          oci_manifest_t *manifest,
                                          char *error,
                                          size_t error_size);

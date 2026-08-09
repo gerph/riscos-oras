@@ -36,6 +36,12 @@ contents and its <userinput>org.opencontainers.image.title</userinput>
 annotation is the relative output path.
 </p>
 <p>
+When requested with <userinput>--source</userinput>, published manifests include
+the OCI source annotation <userinput>org.opencontainers.image.source</userinput>.
+The shorthand <userinput>github:owner/repository</userinput> expands to the
+corresponding GitHub repository URI. No source annotation is added by default.
+</p>
+<p>
 When pushing, ORAS records any available file type, load address, execution
 address and attributes in the layer annotations
 <userinput>org.riscos.filetype</userinput>,
@@ -98,19 +104,23 @@ metadata restored. Unsafe stored paths and duplicate output paths are refused.
 <command-definition name="oras push"
                     description="Publishes files as a RISC OS fileset artifact">
 <syntax>
- push <userreplace>reference</userreplace> <userreplace>path</userreplace>...
+ push <optional><userreplace>--source</userreplace> <userreplace>uri</userreplace></optional>
+ <userreplace>reference</userreplace> <userreplace>path</userreplace>...
 </syntax>
 <parameter name="reference">The OCI artifact reference to publish.</parameter>
 <parameter name="path">A source file to include in the fileset.</parameter>
+<parameter name="uri">An OCI source URI, or github:owner/repository.</parameter>
 <use>
 <p>
 Uploads each source file as a separate OCI blob, records the file metadata
 where available, and publishes the fileset manifest. Directories are not
 accepted; provide every file explicitly.
+The optional source URI is recorded as org.opencontainers.image.source; it is
+not inferred from the target registry or repository.
 </p>
 </use>
 <example>
-<command>*oras push registry.example.net/charles/demo:1.0 Apps.Demo,ff8 Docs.ReadMe,fff</command>
+<command>*oras push --source github:gerph/riscos-oras registry.example.net/charles/demo:1.0 Apps.Demo,ff8 Docs.ReadMe,fff</command>
 </example>
 </command-definition>
 

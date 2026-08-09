@@ -248,6 +248,7 @@ static void test_fileset_plan_and_extract(void)
     riscos_fileset_entry_t *entries;
     size_t entry_count;
     oci_manifest_t manifest;
+    const char *source_annotation;
     test_blob_t blobs[2];
     unsigned char text_data[] = "hello\n";
 
@@ -264,9 +265,17 @@ static void test_fileset_plan_and_extract(void)
     EXPECT(strcmp(entries[0].relative_path, "readme,fff") == 0, "planned relative path");
     EXPECT(entries[0].meta.has_filetype, "planned metadata filetype");
 
-    EXPECT(riscos_fileset_manifest_from_entries(entries, entry_count, &manifest, error, sizeof(error)),
+    EXPECT(riscos_fileset_manifest_from_entries(entries, entry_count,
+                                                "https://github.com/example/project",
+                                                &manifest, error, sizeof(error)),
            "manifest from entries");
     EXPECT(manifest.layer_count == 1, "manifest layer count");
+    source_annotation = oras_find_annotation(manifest.annotations,
+                                             manifest.annotation_count,
+                                             ORAS_ANNOTATION_SOURCE);
+    EXPECT(source_annotation != NULL &&
+           strcmp(source_annotation, "https://github.com/example/project") == 0,
+           "manifest source annotation");
 
     blobs[0].digest = manifest.layers[0].digest;
     blobs[0].data = text_data;

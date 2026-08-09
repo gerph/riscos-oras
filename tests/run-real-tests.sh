@@ -84,13 +84,14 @@ mkdir -p "pulled-basic"
 run_oras pull "localhost:$PORT/demo/basic:latest" "pulled-basic"
 cmp "pulled-basic.fixture,fff" <(printf 'fixture pull data\n')
 
-echo "-- push local file as fileset"
-run_oras push "localhost:$PORT/demo/push:latest" "push-source,fff"
+echo "-- push local file as fileset with source metadata"
+run_oras push --source github:example/project "localhost:$PORT/demo/push:latest" "push-source,fff"
 
 echo "-- fetch pushed manifest"
 run_oras_text manifest fetch "localhost:$PORT/demo/push:latest" >"pushed-manifest.json"
 grep -q 'application/vnd.riscos.fileset.v1' "pushed-manifest.json"
 grep -q 'push-source,fff' "pushed-manifest.json"
+grep -q 'https://github.com/example/project' "pushed-manifest.json"
 
 echo "-- tags against pushed repository"
 run_oras_text tags "localhost:$PORT/demo/push" >"push-tags.json"

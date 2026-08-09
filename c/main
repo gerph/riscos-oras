@@ -89,7 +89,7 @@ static void print_usage(void)
     printf("oras " Module_FullVersionAndDate "\n");
     printf("Syntax:\n");
     printf("  *oras pull <reference> [<directory>]\n");
-    printf("  *oras push <reference> <path>...\n");
+    printf("  *oras push [--source <uri|github:owner/repository>] <reference> <path>...\n");
     printf("  *oras manifest fetch <reference> [<file>]\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
@@ -229,6 +229,57 @@ static void print_tags(const char *json)
     {
         printf("%s\n", json);
     }
+}
+
+/*************************************************** Gerph *********
+ Function:      source_uri_from_option
+ Description:   Expand a source option, including the GitHub shorthand
+ Parameters:    option-> source URI or github:owner/repository shorthand
+                source_uri_out-> allocated URI result
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on invalid input or allocation failure
+ ******************************************************************/
+static int source_uri_from_option(const char *option,
+                                  char **source_uri_out,
+                                  char *error,
+                                  size_t error_size)
+{
+    const char *github_prefix;
+    const char *repository;
+
+    github_prefix = "github:";
+    *source_uri_out = NULL;
+    if (option[0] == '\0')
+    {
+        oras_set_error(error, error_size, "Source URI must not be empty");
+        return 0;
+    }
+    if (strncmp(option, github_prefix, strlen(github_prefix)) == 0)
+    {
+        repository = option + strlen(github_prefix);
+        if (repository[0] == '\0' || strchr(repository, '/') == NULL)
+        {
+            oras_set_error(error, error_size,
+                           "GitHub source must be github:<owner>/<repository>");
+            return 0;
+        }
+        *source_uri_out = malloc(strlen("https://github.com/") + strlen(repository) + 1);
+        if (*source_uri_out != NULL)
+        {
+            sprintf(*source_uri_out, "https://github.com/%s", repository);
+        }
+    }
+    else
+    {
+        *source_uri_out = oras_strdup(option);
+    }
+    if (*source_uri_out == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for source URI");
+        return 0;
+    }
+    return 1;
 }
 
 /*************************************************** Gerph *********
@@ -393,17 +444,35 @@ int main(int argc, char *argv[])
         size_t entry_count;
         oci_manifest_t manifest;
         char *json;
+        char *source_uri;
+        int argument;
         int i;
 
-        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
-            !riscos_fileset_plan((const char *const *)&argv[3],
-                                 (size_t)(argc - 3),
+        argument = 2;
+        source_uri = NULL;
+        if (strcmp(argv[argument], "--source") == 0)
+        {
+            if (argc < 6 || !source_uri_from_option(argv[argument + 1],
+                                                     &source_uri,
+                                                     error,
+                                                     sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", argc < 6 ? "Missing source, reference, or file" : error);
+                exit(EXIT_FAILURE);
+            }
+            argument += 2;
+        }
+        if (argc < argument + 2 ||
+            !oci_parse_reference(argv[argument], &reference, error, sizeof(error)) ||
+            !riscos_fileset_plan((const char *const *)&argv[argument + 1],
+                                 (size_t)(argc - argument - 1),
                                  &entries,
                                  &entry_count,
                                  error,
                                  sizeof(error)) ||
             !riscos_fileset_manifest_from_entries(entries,
                                                   entry_count,
+                                                  source_uri,
                                                   &manifest,
                                                   error,
                                                   sizeof(error)) ||
@@ -412,6 +481,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
+        free(source_uri);
         for (i = 0; i < (int)entry_count; ++i)
         {
             FILE *fp;

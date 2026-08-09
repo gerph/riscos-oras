@@ -23,6 +23,7 @@
 #define ORAS_ANNOTATION_EXECADDR "org.riscos.execaddr"
 #define ORAS_ANNOTATION_ATTR "org.riscos.attr"
 #define ORAS_ANNOTATION_FORMAT "org.riscos.artifact.format"
+#define ORAS_ANNOTATION_SOURCE "org.opencontainers.image.source"
 
 typedef struct oras_annotation_s
 {
