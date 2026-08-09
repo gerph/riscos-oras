@@ -23,7 +23,7 @@ Run `*oras` with no arguments to display the command syntax.
 ```text
 *oras pull <reference> [<directory>]
 *oras push [--source <uri|github:owner/repository>] <reference> <path>...
-*oras manifest fetch <reference> [<file>]
+*oras manifest fetch [--pretty] <reference> [<file>]
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
 *oras login <registry> <username>
@@ -37,11 +37,13 @@ address and attributes are restored. Stored absolute paths and `..` traversal
 are rejected.
 
 `push` uploads each supplied file as an individual `application/riscos` blob
-and publishes a `application/vnd.riscos.fileset.v1` manifest. Input directories
-are not yet accepted: list each file explicitly. The stored artifact names are
-the leaf names of the supplied paths, so files with the same leaf name cannot
-be pushed together. RISC OS filenames such as `oras/xml` are retained when
-pulled; the OCI title uses its portable form, `oras.xml`.
+and publishes a `application/vnd.riscos.fileset.v1` manifest. The layer media
+type includes its registered `name`, `load`, `exec`, and `access` parameters
+where available; the numeric filetype is the `,xyz` suffix of `name`. Input
+directories are not yet accepted: list each file explicitly. The stored
+artifact names are the leaf names of the supplied paths, so files with the
+same leaf name cannot be pushed together. RISC OS filenames such as `oras/xml`
+are retained when pulled; the OCI title uses its portable form, `oras.xml`.
 
 Each layer records the RISC OS filetype, load address, execution address and
 access attributes as OCI annotations. This metadata is restored on pull.
@@ -51,9 +53,11 @@ For GitHub repositories, `github:<owner>/<repository>` expands to the matching
 `https://github.com/...` URI, allowing GHCR to associate that artifact with its
 source repository. Source metadata is never added unless requested.
 
-`manifest fetch` writes the raw manifest JSON to standard output, or to its
-optional file argument. `blob fetch` similarly writes a named blob. `tags`
-prints one tag per line when the registry returns a normal tag list.
+`manifest fetch` writes the raw manifest JSON to standard output, ending it
+with a newline, or writes the unmodified JSON to its optional file argument.
+Pass `--pretty` to format the JSON for human reading before writing it.
+`blob fetch` similarly writes a named blob. `tags` prints one tag per line
+when the registry returns a normal tag list.
 
 `login` prompts for the secret without echoing it, then replaces the matching
 `auths.<registry>.auth` entry. `logout` removes only that registry entry.
@@ -111,4 +115,4 @@ All self-tests passed
 ```
 
 For the complete RISC OS reference manual, see
-[`prminxml/oras.xml`](prminxml/oras.xml).
+[`prminxml/oras.xml,f80`](prminxml/oras.xml,f80).

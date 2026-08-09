@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cJSON/cJSON.h"
+
 #include "oras_types.h"
 #include "oci_manifest.h"
 #include "oci_registry.h"
@@ -24,15 +26,23 @@
  Parameters:    data-> the bytes to write
                 size = number of bytes to write
                 path-> destination filename, or NULL for stdout
+                append_newline = append a newline when writing to stdout
  Returns:       none (exits the process on failure to open the file)
  ******************************************************************/
-static void write_output(const unsigned char *data, size_t size, const char *path)
+static void write_output(const unsigned char *data,
+                         size_t size,
+                         const char *path,
+                         int append_newline)
 {
     FILE *fp;
 
     if (path == NULL)
     {
         fwrite(data, 1, size, stdout);
+        if (append_newline && (size == 0 || data[size - 1] != '\n'))
+        {
+            fputc('\n', stdout);
+        }
         return;
     }
     fp = fopen(path, "wb");
@@ -46,6 +56,34 @@ static void write_output(const unsigned char *data, size_t size, const char *pat
         fwrite(data, 1, size, fp);
     }
     fclose(fp);
+}
+
+/*************************************************** Gerph *********
+ Function:      format_json
+ Description:   Format a JSON document for human-readable output
+ Parameters:    json-> JSON document to format
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       allocated formatted JSON, or NULL on failure
+ ******************************************************************/
+static char *format_json(const char *json, char *error, size_t error_size)
+{
+    cJSON *root;
+    char *formatted;
+
+    root = cJSON_Parse(json);
+    if (root == NULL)
+    {
+        oras_set_error(error, error_size, "Registry returned malformed manifest JSON");
+        return NULL;
+    }
+    formatted = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (formatted == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for formatted manifest JSON");
+    }
+    return formatted;
 }
 
 /*************************************************** Gerph *********
@@ -90,7 +128,7 @@ static void print_usage(void)
     printf("Syntax:\n");
     printf("  *oras pull <reference> [<directory>]\n");
     printf("  *oras push [--source <uri|github:owner/repository>] <reference> <path>...\n");
-    printf("  *oras manifest fetch <reference> [<file>]\n");
+    printf("  *oras manifest fetch [--pretty] <reference> [<file>]\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
     printf("  *oras login <registry> <username>\n");
@@ -334,14 +372,43 @@ int main(int argc, char *argv[])
     {
         oci_reference_t reference;
         char *json;
+        const char *reference_text;
+        const char *output_path;
+        int pretty;
 
-        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+        pretty = strcmp(argv[3], "--pretty") == 0;
+        if (pretty && argc < 5)
+        {
+            print_usage();
+            exit(EXIT_FAILURE);
+        }
+        reference_text = pretty ? argv[4] : argv[3];
+        output_path = pretty ? (argc >= 6 ? argv[5] : NULL) :
+                               (argc >= 5 ? argv[4] : NULL);
+        if (!oci_parse_reference(reference_text, &reference, error, sizeof(error)) ||
             !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)))
         {
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
-        write_output((const unsigned char *)json, strlen(json), argc >= 5 ? argv[4] : NULL);
+        if (pretty)
+        {
+            char *formatted;
+
+            formatted = format_json(json, error, sizeof(error));
+            free(json);
+            if (formatted == NULL)
+            {
+                fprintf(stderr, "%s\n", error);
+                oras_free_reference(&reference);
+                exit(EXIT_FAILURE);
+            }
+            json = formatted;
+        }
+        write_output((const unsigned char *)json,
+                     strlen(json),
+                     output_path,
+                     1);
         free(json);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);
@@ -358,7 +425,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
-        write_output(data, size, argc >= 6 ? argv[5] : NULL);
+        write_output(data, size, argc >= 6 ? argv[5] : NULL, 0);
         free(data);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);

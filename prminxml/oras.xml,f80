@@ -32,7 +32,12 @@ ORAS filesets use an OCI image manifest with artifact type
 <userinput>application/vnd.riscos.fileset.v1</userinput> and the manifest
 annotation <userinput>org.riscos.artifact.format = fileset-v1</userinput>.
 Each layer represents exactly one file; its blob is the unmodified file
-contents with media type <userinput>application/riscos</userinput>. Its
+contents with media type <userinput>application/riscos</userinput>. Where the
+metadata is available, the layer media type includes its registered
+<userinput>name</userinput>, <userinput>load</userinput>,
+<userinput>exec</userinput> and <userinput>access</userinput> parameters. The
+numeric filetype is encoded in the <userinput>,xyz</userinput> suffix of the
+<userinput>name</userinput> parameter. Its
 <userinput>org.opencontainers.image.title</userinput> annotation is a portable
 relative output path. The accompanying <userinput>org.riscos.filename</userinput>
 annotation preserves the native RISC OS leaf name, including a suffix such as
@@ -119,8 +124,9 @@ metadata restored. Unsafe stored paths and duplicate output paths are refused.
 <use>
 <p>
 Uploads each source file as a separate <userinput>application/riscos</userinput>
-OCI blob, records the file metadata where available, and publishes the
-fileset manifest. Directories are not accepted; provide every file explicitly.
+OCI blob, records the file metadata both as media type parameters and OCI
+annotations where available, and publishes the fileset manifest. Directories
+are not accepted; provide every file explicitly.
 The optional source URI is recorded as org.opencontainers.image.source; it is
 not inferred from the target registry or repository.
 </p>
@@ -133,12 +139,17 @@ not inferred from the target registry or repository.
 <command-definition name="oras manifest fetch"
                     description="Retrieves raw OCI manifest JSON">
 <syntax>
- manifest fetch <userreplace>reference</userreplace>
+ manifest fetch <optional><userreplace>--pretty</userreplace></optional>
+ <userreplace>reference</userreplace>
  <optional><userreplace>file</userreplace></optional>
 </syntax>
 <parameter name="reference">The OCI manifest reference to retrieve.</parameter>
 <parameter name="file">Optional destination file for the JSON.</parameter>
-<use><p>Writes the manifest JSON to the optional file, or to standard output.</p></use>
+<use><p>
+Writes the manifest JSON to the optional file, or to standard output with a
+trailing newline. The optional <userinput>--pretty</userinput> switch formats
+the JSON for human reading before writing it.
+</p></use>
 <example>
 <command>*oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff</command>
 </example>

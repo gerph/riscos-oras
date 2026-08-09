@@ -264,8 +264,9 @@ static void test_fileset_plan_and_extract(void)
     EXPECT(entry_count == 1, "one planned file");
     EXPECT(strcmp(entries[0].relative_path, "readme,fff") == 0,
            "planned RISC OS relative path");
-    EXPECT(strcmp(entries[0].descriptor.media_type, "application/riscos") == 0,
-           "planned RISC OS media type");
+    EXPECT(strstr(entries[0].descriptor.media_type,
+                  "application/riscos; name=\"readme,FFF\"") != NULL,
+           "planned RISC OS media type with filetype");
     EXPECT(strcmp(oras_find_annotation(entries[0].descriptor.annotations,
                                        entries[0].descriptor.annotation_count,
                                        ORAS_ANNOTATION_TITLE),

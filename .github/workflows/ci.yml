@@ -100,7 +100,7 @@ jobs:
       - name: Build PRM-in-XML documentation
         uses: gerph/riscos-prminxml-action@v1
         with:
-          files: prminxml/oras.xml
+          files: prminxml/oras.xml,f80
           output: documentation
           pdf-generator: prince
           style: prm

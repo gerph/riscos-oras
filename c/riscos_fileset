@@ -33,6 +33,11 @@ static int build_native_output_path(const char *directory,
                                     char *error,
                                     size_t error_size);
 static char *riscos_filename_to_oci_title(const char *filename);
+static int set_riscos_media_type(oci_descriptor_t *descriptor,
+                                 const char *filename,
+                                 const riscos_file_meta_t *meta,
+                                 char *error,
+                                 size_t error_size);
 static int path_object_type(const char *path);
 
 int riscos_fileset_sanitise_path(const char *path,
@@ -208,6 +213,14 @@ static int append_entry(riscos_fileset_entry_t **entries,
         return 0;
     }
     if (!riscos_metadata_read(source_path, &entry->meta, error, error_size))
+    {
+        return 0;
+    }
+    if (!set_riscos_media_type(&entry->descriptor,
+                               relative_path,
+                               &entry->meta,
+                               error,
+                               error_size))
     {
         return 0;
     }
@@ -522,6 +535,63 @@ static char *riscos_filename_to_oci_title(const char *filename)
         }
     }
     return title;
+}
+
+/*************************************************** Gerph *********
+ Function:      set_riscos_media_type
+ Description:   Set application/riscos MIME parameters from file metadata
+ Parameters:    descriptor-> descriptor whose media type is updated
+                filename-> native RISC OS leaf filename
+                meta-> RISC OS metadata to encode
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
+static int set_riscos_media_type(oci_descriptor_t *descriptor,
+                                 const char *filename,
+                                 const riscos_file_meta_t *meta,
+                                 char *error,
+                                 size_t error_size)
+{
+    size_t filename_length;
+    size_t name_length;
+    char *media_type;
+
+    filename_length = strlen(filename);
+    name_length = filename_length;
+    if (filename_length >= 4 && filename[filename_length - 4] == ',')
+    {
+        name_length -= 4;
+    }
+    media_type = malloc(filename_length + 128);
+    if (media_type == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for RISC OS media type");
+        return 0;
+    }
+    strcpy(media_type, ORAS_DESCRIPTOR_MEDIA_TYPE "; name=\"");
+    strncat(media_type, filename, name_length);
+    if (meta->has_filetype)
+    {
+        sprintf(media_type + strlen(media_type), ",%03X\"", meta->filetype);
+    }
+    else
+    {
+        strcat(media_type, "\"");
+    }
+    if (meta->has_loadexec)
+    {
+        sprintf(media_type + strlen(media_type), "; load=&%08lX; exec=&%08lX",
+                (unsigned long)meta->loadaddr, (unsigned long)meta->execaddr);
+    }
+    if (meta->has_attrs)
+    {
+        sprintf(media_type + strlen(media_type), "; access=&%02lX",
+                ((unsigned long)meta->attrs % 256UL));
+    }
+    free(descriptor->media_type);
+    descriptor->media_type = media_type;
+    return 1;
 }
 
 int riscos_fileset_extract(const oci_manifest_t *manifest,
