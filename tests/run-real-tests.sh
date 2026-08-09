@@ -32,6 +32,7 @@ sleep 1
 run_oras() {
     riscos-run \
         --load-pymodule "$URL_PYMOD" \
+        --set-variable 'ORASAuthentication$Write=AuthConfig,fff' \
         --run-native "$ROOT/aif32/oras,ff8" \
         "$@"
 }
@@ -71,6 +72,18 @@ mkdir -p "pulled"
 run_oras pull "localhost:$PORT/demo/pull:latest" "pulled"
 cmp "pulled.fixture,fff" <(printf 'fixture pull data\n')
 
+echo "-- protected Basic manifest fetch rejects absent credentials"
+run_oras_text manifest fetch "localhost:$PORT/demo/basic:latest" >/dev/null 2>&1 || true
+
+echo "-- interactive login writes Docker-compatible credentials"
+printf 'secret\n' | run_oras login "localhost:$PORT" test
+grep -q 'dGVzdDpzZWNyZXQ=' "AuthConfig,fff"
+
+echo "-- protected Basic pull uses stored credentials"
+mkdir -p "pulled-basic"
+run_oras pull "localhost:$PORT/demo/basic:latest" "pulled-basic"
+cmp "pulled-basic.fixture,fff" <(printf 'fixture pull data\n')
+
 echo "-- push local file as fileset"
 run_oras push "localhost:$PORT/demo/push:latest" "push-source,fff"
 
@@ -87,5 +100,18 @@ echo "-- pull pushed fileset"
 mkdir -p "pulled-push"
 run_oras pull "localhost:$PORT/demo/push:latest" "pulled-push"
 cmp "pulled-push.push-source,fff" "push-source,fff"
+
+echo "-- protected Bearer push and pull use stored credentials"
+run_oras push "localhost:$PORT/demo/bearer:latest" "push-source,fff"
+mkdir -p "pulled-bearer"
+run_oras pull "localhost:$PORT/demo/bearer:latest" "pulled-bearer"
+cmp "pulled-bearer.push-source,fff" "push-source,fff"
+
+echo "-- logout removes only the selected credential"
+run_oras logout "localhost:$PORT"
+if grep -q 'localhost' "AuthConfig,fff"; then
+    echo "logout retained target credential" >&2
+    exit 1
+fi
 
 echo "Real oras smoke tests passed"

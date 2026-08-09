@@ -1,0 +1,32 @@
+/*******************************************************************
+ * File:        oci_auth
+ * Purpose:     Docker-compatible OCI registry credential support
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef OCI_AUTH_H
+#define OCI_AUTH_H
+
+#include <stddef.h>
+
+typedef struct oci_auth_challenge_s
+{
+    int bearer;
+    char *realm;
+    char *service;
+    char *scope;
+} oci_auth_challenge_t;
+
+int oci_auth_login(const char *registry, const char *username, const char *secret,
+                   char *error, size_t error_size);
+int oci_auth_logout(const char *registry, char *error, size_t error_size);
+int oci_auth_get_credentials(const char *registry, char **username_out, char **secret_out,
+                             char *error, size_t error_size);
+int oci_auth_parse_challenge(const char *text, oci_auth_challenge_t *challenge,
+                             char *error, size_t error_size);
+void oci_auth_free_challenge(oci_auth_challenge_t *challenge);
+int oci_auth_parse_token(const char *json, char **token_out, char *error, size_t error_size);
+char *oci_auth_base64_encode(const unsigned char *data, size_t size);
+unsigned char *oci_auth_base64_decode(const char *text, size_t *size_out);
+
+#endif

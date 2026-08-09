@@ -8,12 +8,11 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "RISC_OSLib/os.h"
-
 #include "oras_types.h"
 #include "sha256.h"
 #include "riscos_metadata.h"
 #include "riscos_fileset.h"
+#include "os.h"
 
 static int append_entry(riscos_fileset_entry_t **entries,
                         size_t *entry_count,
@@ -230,16 +229,13 @@ static int has_duplicate_relative_path(const riscos_fileset_entry_t *entries,
  ******************************************************************/
 static int path_object_type(const char *path)
 {
-    os_filestr info;
+    int object_type;
 
-    memset(&info, 0, sizeof(info));
-    info.action = 5;
-    info.name = (char *)path;
-    if (os_file(&info) != NULL)
+    if (!oras_os_file_info(path, &object_type, NULL, NULL, NULL))
     {
         return 0;
     }
-    return info.action;
+    return object_type;
 }
 
 int riscos_fileset_plan(const char *const *paths,
@@ -381,7 +377,6 @@ static int create_parent_directories(const char *path,
 {
     char *copy;
     char *slash;
-    os_filestr info;
 
     copy = oras_strdup(path);
     if (copy == NULL)
@@ -397,10 +392,7 @@ static int create_parent_directories(const char *path,
         *slash = '\0';
         if (copy[0] != '\0' && path_object_type(copy) == 0)
         {
-            memset(&info, 0, sizeof(info));
-            info.action = 8;
-            info.name = copy;
-            if (os_file(&info) != NULL)
+            if (!oras_os_file_create_directory(copy))
             {
                 free(copy);
                 oras_set_error(error, error_size, "Unable to create directory '%s'", copy);

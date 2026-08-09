@@ -27,11 +27,10 @@ TYPE       = aif
 INCLUDES   =
 
 # Space separated list of defines to set, eg -DDEBUG
-CDEFINES   =
+CDEFINES   = -DSIMPLE_APP
 
 # Space separated list of libraries to link against, eg C:LibName.o.libLibName
-LIBS       = C:RISC_OSLib.o.risc_oslib \
-             C:URL.o.libURLFetch \
+LIBS       = C:URL.o.libURLFetch \
              C:cJSON.o.libcJSON \
              ${CLIB}
 
@@ -44,6 +43,8 @@ OBJS       = o.main \
              o.riscos_fileset \
              o.url_fetch \
              o.oci_registry \
+             o.oci_auth \
+             o.os \
              o.selftest
 
 # Space separated list of XML files for building documentation.

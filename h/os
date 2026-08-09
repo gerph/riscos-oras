@@ -51,7 +51,7 @@ _kernel_oserror *os_readvarval(const char *var, char *buf, int buflen, uint32_t 
  Parameters:    cli-> the command line to run
  Returns:       pointer to error, or NULL if no error
  ******************************************************************/
-_kernel_oserror *os_cli(const char *cli);
+_kernel_oserror *oras_os_cli(const char *cli);
 
 
 /*************************************************** Gerph *********
@@ -94,6 +94,22 @@ void os_exit(void);
  Returns:       pointer to error, or NULL if no error
  ******************************************************************/
 _kernel_oserror *os_readline(char *line, int len);
+
+/*************************************************** Gerph *********
+ Function:      os_readline_secret
+ Description:   Read a line without echoing the entered characters
+ Parameters:    line-> line to read
+                len = max length including terminator
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_readline_secret(char *line, int len);
+
+int oras_os_file_info(const char *path, int *object_type, uint32_t *loadaddr,
+                      uint32_t *execaddr, uint32_t *attrs);
+int oras_os_file_set_info(const char *path, uint32_t loadaddr, uint32_t execaddr,
+                          uint32_t attrs);
+int oras_os_file_set_type(const char *path, uint32_t filetype);
+int oras_os_file_create_directory(const char *path);
 
 
 #ifdef __riscos64

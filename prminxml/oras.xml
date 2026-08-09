@@ -12,8 +12,10 @@ retrieved from a registry without losing recognised RISC OS metadata.
 <p>
 The URLFetcher modules are required to use ORAS. They provide the HTTP and
 HTTPS transport used to communicate with an OCI registry. ORAS supports
-anonymous access to public registries in this release. It does not yet support
-registry authentication, so Docker Hub cannot currently be used.
+anonymous access to public registries and standard Basic and Bearer challenge
+authentication. Credentials are stored in Docker-compatible form in the file
+named by <userinput>&lt;ORASAuthentication$Write&gt;</userinput>. That file is
+not encrypted and should be protected with normal file access controls.
 </p>
 <p>
 An OCI reference has the form
@@ -153,6 +155,23 @@ accepted; provide every file explicitly.
 </example>
 </command-definition>
 
+<command-definition name="oras login"
+                    description="Stores a registry login credential">
+<syntax> login <userreplace>registry</userreplace> <userreplace>username</userreplace> </syntax>
+<parameter name="registry">The exact registry host, optionally including its port.</parameter>
+<parameter name="username">The user name to store.</parameter>
+<use><p>Prompts for a non-echoed secret and stores a Docker-compatible
+<userinput>auths</userinput> entry. The credential file is not encrypted.</p></use>
+<example><command>*oras login ghcr.io gerph</command></example>
+</command-definition>
+
+<command-definition name="oras logout"
+                    description="Removes a registry login credential">
+<syntax> logout <userreplace>registry</userreplace> </syntax>
+<parameter name="registry">The exact registry host, optionally including its port.</parameter>
+<use><p>Removes only the matching credential entry from the configured credential file.</p></use>
+</command-definition>
+
 <command-definition name="oras --self-test"
                     description="Runs local ORAS self-tests">
 <syntax> --self-test </syntax>
@@ -193,6 +212,9 @@ the digest and metadata for each file layer.
  <maintainer><email name="Charles Ferguson" address="gerph@gerph.org" /></maintainer>
  <disclaimer><p>&copy; Charles Ferguson, 2026.</p></disclaimer>
  <history>
+  <revision number="2" author="Charles Ferguson" date="09 Aug 2026" title="Registry authentication">
+   <change>Documented Docker-compatible login credentials and authentication commands.</change>
+  </revision>
   <revision number="1" author="Charles Ferguson" date="09 Aug 2026" title="Initial version">
    <change>Documented ORAS and its command-line interface.</change>
   </revision>

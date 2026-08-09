@@ -7,9 +7,10 @@ metadata when an artifact is pulled.
 ## Requirements
 
 The RISC OS `URLFetcher` modules must be installed and available before
-`oras` can contact a registry. This first version supports anonymous access to
-public OCI registries; authenticated registries, including Docker Hub, are not
-currently supported.
+`oras` can contact a registry. Anonymous registries work without setup.
+For authenticated registries, `login` stores Docker-compatible credentials in
+the file named by `<ORASAuthentication$Write>`. This is not encrypted; protect
+the file with normal RISC OS access controls.
 
 An OCI reference must name an explicit registry host and repository, for
 example `registry.example.net/example/tool:1.0`. If no tag is given, `latest`
@@ -25,6 +26,8 @@ Run `*oras` with no arguments to display the command syntax.
 *oras manifest fetch <reference> [<file>]
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
+*oras login <registry> <username>
+*oras logout <registry>
 ```
 
 `pull` recreates every file in a RISC OS fileset artifact below the optional
@@ -42,6 +45,12 @@ together.
 `manifest fetch` writes the raw manifest JSON to standard output, or to its
 optional file argument. `blob fetch` similarly writes a named blob. `tags`
 prints one tag per line when the registry returns a normal tag list.
+
+`login` prompts for the secret without echoing it, then replaces the matching
+`auths.<registry>.auth` entry. `logout` removes only that registry entry.
+Credentials are used after a registry has sent a standard Basic or Bearer
+challenge. They are sent only over HTTPS, except to `localhost` and
+`127.0.0.1` development registries.
 
 ## Examples
 
@@ -68,6 +77,14 @@ List the available tags in a repository:
 
 ```text
 *oras tags registry.example.net/charles/demo
+```
+
+Log in before publishing to GHCR:
+
+```text
+*oras login ghcr.io gerph
+Secret for gerph at ghcr.io:
+*oras push ghcr.io/gerph/riscos-oras:1.0 Apps.Demo,ff8
 ```
 
 The `--self-test` command performs local, non-network checks of reference

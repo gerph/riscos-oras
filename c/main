@@ -11,8 +11,10 @@
 #include "oras_types.h"
 #include "oci_manifest.h"
 #include "oci_registry.h"
+#include "oci_auth.h"
 #include "riscos_fileset.h"
 #include "selftest.h"
+#include "os.h"
 
 #include "VersionNum"
 
@@ -91,6 +93,8 @@ static void print_usage(void)
     printf("  *oras manifest fetch <reference> [<file>]\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
+    printf("  *oras login <registry> <username>\n");
+    printf("  *oras logout <registry>\n");
     printf("  *oras --self-test\n");
 }
 
@@ -248,6 +252,32 @@ int main(int argc, char *argv[])
     {
         print_usage();
         exit(EXIT_FAILURE);
+    }
+    if (strcmp(argv[1], "login") == 0 && argc == 4)
+    {
+        char secret[256];
+        _kernel_oserror *oserror;
+
+        printf("Secret for %s at %s: ", argv[3], argv[2]);
+        fflush(stdout);
+        oserror = os_readline_secret(secret, sizeof(secret));
+        if (oserror != NULL || !oci_auth_login(argv[2], argv[3], secret, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", oserror != NULL ? oserror->errmess : error);
+            exit(EXIT_FAILURE);
+        }
+        printf("Login stored for %s\n", argv[2]);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "logout") == 0 && argc == 3)
+    {
+        if (!oci_auth_logout(argv[2], error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        printf("Login removed for %s\n", argv[2]);
+        exit(EXIT_SUCCESS);
     }
     if (strcmp(argv[1], "manifest") == 0 && argc >= 4 && strcmp(argv[2], "fetch") == 0)
     {

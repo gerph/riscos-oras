@@ -73,7 +73,7 @@ _kernel_oserror *os_readvarval(const char *var, char *buf, int buflen, uint32_t 
  Parameters:    cli-> the command line to run
  Returns:       pointer to error, or NULL if no error
  ******************************************************************/
-_kernel_oserror *os_cli(const char *cli)
+_kernel_oserror *oras_os_cli(const char *cli)
 {
     _kernel_oserror *err;
     err = _swix(OS_CLI, _IN(0), cli);
@@ -193,6 +193,95 @@ _kernel_oserror *os_readline(char *line, int len)
 
 escape:
     return Err_Escape;
+}
+
+/*************************************************** Gerph *********
+ Function:      os_readline_secret
+ Description:   Read a line while output is disabled, restoring output and
+                moving to a fresh line afterwards
+ Parameters:    line-> line to read
+                len = max length including terminator
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_readline_secret(char *line, int len)
+{
+    _kernel_oserror *err;
+
+    _swi(OS_WriteC, _IN(0), 21);
+    err = os_readline(line, len);
+    _swi(OS_WriteC, _IN(0), 6);
+    _swi(OS_NewLine, 0);
+    return err;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_info
+ Description:   Read OS_File 5 catalogue information
+ Parameters:    path-> object to inspect
+                object_type-> optional returned object type
+                loadaddr-> optional returned load address
+                execaddr-> optional returned execution address
+                attrs-> optional returned attributes
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_info(const char *path, int *object_type, uint32_t *loadaddr,
+                      uint32_t *execaddr, uint32_t *attrs)
+{
+    _kernel_oserror *err;
+    int local_object_type;
+    uint32_t local_loadaddr;
+    uint32_t local_execaddr;
+    int ignored_length;
+    uint32_t local_attrs;
+    const char *ignored_name;
+
+    err = _swix(OS_File, _INR(0, 1)|_OUTR(0, 5), 5, path,
+                &local_object_type, &ignored_name, &local_loadaddr,
+                &local_execaddr, &ignored_length, &local_attrs);
+    if (err != NULL) return 0;
+    if (object_type != NULL) *object_type = local_object_type;
+    if (loadaddr != NULL) *loadaddr = local_loadaddr;
+    if (execaddr != NULL) *execaddr = local_execaddr;
+    if (attrs != NULL) *attrs = local_attrs;
+    return 1;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_set_info
+ Description:   Set OS_File 1 catalogue information
+ Parameters:    path-> object to update
+                loadaddr-> load address
+                execaddr-> execution address
+                attrs-> attributes
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_set_info(const char *path, uint32_t loadaddr, uint32_t execaddr,
+                          uint32_t attrs)
+{
+    return _swix(OS_File, _INR(0, 5), 1, path, loadaddr, execaddr, 0, attrs) == NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_set_type
+ Description:   Set an object's type with OS_File 18
+ Parameters:    path-> object to update
+                filetype-> new RISC OS filetype
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_set_type(const char *path, uint32_t filetype)
+{
+    return _swix(OS_File, _INR(0, 2), 18, path, filetype) == NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_create_directory
+ Description:   Create one directory with OS_File 8
+ Parameters:    path-> directory to create
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_create_directory(const char *path)
+{
+    return _swix(OS_File, _INR(0, 1), 8, path) == NULL;
 }
 
 

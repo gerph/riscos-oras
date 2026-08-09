@@ -8,13 +8,13 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "RISC_OSLib/os.h"
-
 #include "oras_types.h"
 #include "oci_manifest.h"
 #include "riscos_metadata.h"
 #include "riscos_fileset.h"
+#include "oci_auth.h"
 #include "selftest.h"
+#include "os.h"
 
 typedef struct test_blob_s
 {
@@ -83,12 +83,7 @@ static int test_fetch_blob(void *private_ref,
  ******************************************************************/
 static void ensure_dir(const char *path)
 {
-    os_filestr info;
-
-    memset(&info, 0, sizeof(info));
-    info.action = 8;   /* OS_File 8: create directory */
-    info.name = (char *)path;
-    os_file(&info);
+    oras_os_file_create_directory(path);
 }
 
 /*************************************************** Gerph *********
@@ -201,6 +196,45 @@ static void test_manifest_and_paths(void)
 }
 
 /*************************************************** Gerph *********
+ Function:      test_auth_helpers
+ Description:   Exercise credential encodings and standard auth response parsing
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
+static void test_auth_helpers(void)
+{
+    char *encoded;
+    unsigned char *decoded;
+    size_t size;
+    char error[256];
+    oci_auth_challenge_t challenge;
+    char *token;
+
+    encoded = oci_auth_base64_encode((const unsigned char *)"user:secret", 11);
+    EXPECT(encoded != NULL && strcmp(encoded, "dXNlcjpzZWNyZXQ=") == 0, "credential base64 encode");
+    decoded = encoded == NULL ? NULL : oci_auth_base64_decode(encoded, &size);
+    EXPECT(decoded != NULL && size == 11 && memcmp(decoded, "user:secret", 11) == 0,
+           "credential base64 decode");
+    free(encoded);
+    free(decoded);
+    EXPECT(oci_auth_base64_decode("invalid!", &size) == NULL, "reject invalid base64");
+    EXPECT(oci_auth_parse_challenge("Basic realm=\"test\"", &challenge, error, sizeof(error)) &&
+           !challenge.bearer, "parse Basic challenge");
+    oci_auth_free_challenge(&challenge);
+    EXPECT(oci_auth_parse_challenge("Bearer realm=\"https://auth.example/token\", service=\"registry\", scope=\"repository:test:pull\"",
+                                    &challenge, error, sizeof(error)) &&
+           challenge.bearer && strcmp(challenge.service, "registry") == 0,
+           "parse Bearer challenge");
+    oci_auth_free_challenge(&challenge);
+    EXPECT(!oci_auth_parse_challenge("Digest foo", &challenge, error, sizeof(error)),
+           "reject unsupported challenge");
+    EXPECT(oci_auth_parse_token("{\"access_token\":\"token-value\"}", &token, error, sizeof(error)) &&
+           strcmp(token, "token-value") == 0, "parse access_token response");
+    free(token);
+    EXPECT(!oci_auth_parse_token("{}", &token, error, sizeof(error)), "reject tokenless response");
+}
+
+/*************************************************** Gerph *********
  Function:      test_fileset_plan_and_extract
  Description:   Exercise fileset planning, manifest building and extraction
  Parameters:    none
@@ -279,6 +313,7 @@ int oras_run_self_tests(void)
     test_reference_parsing();
     test_metadata_annotations();
     test_manifest_and_paths();
+    test_auth_helpers();
     test_fileset_plan_and_extract();
     if (test_failures == 0)
     {
