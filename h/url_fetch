@@ -9,6 +9,15 @@
 
 #include "oras_types.h"
 
+/*************************************************** Gerph *********
+ Function:      url_fetch_execute
+ Description:   Perform an HTTP request via the URL_Fetcher module
+ Parameters:    request-> the request to perform
+                response-> structure to fill in with the result
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed
+ ******************************************************************/
 int url_fetch_execute(const url_fetch_request_t *request,
                       url_fetch_response_t *response,
                       char *error,

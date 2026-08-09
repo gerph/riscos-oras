@@ -16,25 +16,78 @@ typedef int (*riscos_fileset_blob_fetcher_f)(void *private_ref,
                                              char *error,
                                              size_t error_size);
 
+/*************************************************** Gerph *********
+ Function:      riscos_fileset_plan
+ Description:   Build a list of fileset entries from a set of source paths
+ Parameters:    paths-> array of source path pointers
+                path_count = number of paths in the array
+                entries_out-> where to store the allocated entries array
+                entry_count_out-> where to store the entry count
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 int riscos_fileset_plan(const char *const *paths,
                         size_t path_count,
                         riscos_fileset_entry_t **entries_out,
                         size_t *entry_count_out,
                         char *error,
                         size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_fileset_free_entries
+ Description:   Free a fileset entries array and its contents
+ Parameters:    entries-> entries array to free
+                entry_count = number of entries in the array
+ Returns:       none
+ ******************************************************************/
 void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
                                  size_t entry_count);
+
+/*************************************************** Gerph *********
+ Function:      riscos_fileset_manifest_from_entries
+ Description:   Build an OCI manifest from a set of fileset entries
+ Parameters:    entries-> array of fileset entries
+                entry_count = number of entries in the array
+                manifest-> manifest structure to populate
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                                          size_t entry_count,
                                          oci_manifest_t *manifest,
                                          char *error,
                                          size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_fileset_extract
+ Description:   Extract the layers of a manifest to files on disc
+ Parameters:    manifest-> manifest describing the layers to extract
+                directory-> destination directory for extracted files
+                fetch_blob-> callback used to fetch each layer's data
+                private_ref-> opaque value passed to the fetch callback
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 int riscos_fileset_extract(const oci_manifest_t *manifest,
                            const char *directory,
                            riscos_fileset_blob_fetcher_f fetch_blob,
                            void *private_ref,
                            char *error,
                            size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_fileset_sanitise_path
+ Description:   Validate and copy a path, rejecting anything unsafe for use
+                as an output path
+ Parameters:    path-> path to sanitise
+                sanitised_out-> where to store the allocated sanitised copy
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 int riscos_fileset_sanitise_path(const char *path,
                                  char **sanitised_out,
                                  char *error,

@@ -9,26 +9,80 @@
 
 #include "oras_types.h"
 
+/*************************************************** Gerph *********
+ Function:      oci_registry_fetch_manifest
+ Description:   Fetch a manifest (or index) from an OCI registry
+ Parameters:    reference-> the registry/repository/tag or digest to fetch
+                json_out-> where to store the fetched manifest text
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 int oci_registry_fetch_manifest(const oci_reference_t *reference,
                                 char **json_out,
                                 char *error,
                                 size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_fetch_blob
+ Description:   Fetch a blob from an OCI registry by digest
+ Parameters:    reference-> the registry/repository to fetch from
+                digest-> the digest of the blob to fetch
+                data_out-> where to store the fetched blob data
+                size_out-> where to store the size of the blob data
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 int oci_registry_fetch_blob(const oci_reference_t *reference,
                             const char *digest,
                             unsigned char **data_out,
                             size_t *size_out,
                             char *error,
                             size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_list_tags
+ Description:   List the tags available for a repository
+ Parameters:    reference-> the registry/repository to list tags for
+                json_out-> where to store the fetched tags JSON text
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 int oci_registry_list_tags(const oci_reference_t *reference,
                            char **json_out,
                            char *error,
                            size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_push_blob
+ Description:   Push a blob to an OCI registry, starting and completing
+                the upload session
+ Parameters:    reference-> the registry/repository to push to
+                data-> the blob data to push
+                size = size of the blob data
+                digest-> the digest of the blob being pushed
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 int oci_registry_push_blob(const oci_reference_t *reference,
                            const unsigned char *data,
                            size_t size,
                            const char *digest,
                            char *error,
                            size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_push_manifest
+ Description:   Push a manifest to an OCI registry
+ Parameters:    reference-> the registry/repository/tag or digest to push to
+                manifest_json-> the manifest text to push
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 int oci_registry_push_manifest(const oci_reference_t *reference,
                                const char *manifest_json,
                                char *error,

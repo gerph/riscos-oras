@@ -12,6 +12,12 @@
 #include "url_fetch.h"
 #include "oci_registry.h"
 
+/*************************************************** Gerph *********
+ Function:      ascii_tolower
+ Description:   Convert an ASCII character to lower case
+ Parameters:    ch = the character to convert
+ Returns:       the lower-cased character, or ch unchanged if not upper case
+ ******************************************************************/
 static int ascii_tolower(int ch)
 {
     if (ch >= 'A' && ch <= 'Z')
@@ -21,6 +27,13 @@ static int ascii_tolower(int ch)
     return ch;
 }
 
+/*************************************************** Gerph *********
+ Function:      equal_casefold
+ Description:   Compare two strings for equality, ignoring case
+ Parameters:    left-> first string to compare
+                right-> second string to compare
+ Returns:       1 if the strings are equal, 0 if not
+ ******************************************************************/
 static int equal_casefold(const char *left, const char *right)
 {
     while (*left != '\0' && *right != '\0')
@@ -35,17 +48,36 @@ static int equal_casefold(const char *left, const char *right)
     return *left == '\0' && *right == '\0';
 }
 
+/*************************************************** Gerph *********
+ Function:      is_docker_hub_registry
+ Description:   Check whether a reference refers to the Docker Hub registry
+ Parameters:    reference-> the registry reference to check
+ Returns:       1 if the registry is Docker Hub, 0 if not
+ ******************************************************************/
 static int is_docker_hub_registry(const oci_reference_t *reference)
 {
     return strcmp(reference->registry, "registry-1.docker.io") == 0;
 }
 
+/*************************************************** Gerph *********
+ Function:      reject_unsupported_registry_auth
+ Description:   Reject registries whose authentication scheme is not yet
+                supported, currently Docker Hub
+ Parameters:    reference-> the registry reference being used
+                error-> buffer to receive an error message on rejection
+                error_size = size of the error buffer
+ Returns:       1 if the registry is supported, 0 if it was rejected
+ ******************************************************************/
 static int reject_unsupported_registry_auth(const oci_reference_t *reference,
                                             char *error,
                                             size_t error_size)
 {
     if (is_docker_hub_registry(reference))
     {
+        /* Docker Hub requires a separate bearer token exchange with
+           auth.docker.io before registry requests will be accepted;
+           that flow is not implemented yet, so fail cleanly here
+           rather than attempting requests that will be rejected. */
         oras_set_error(error,
                        error_size,
                        "Docker Hub authentication is not implemented yet; "
@@ -55,6 +87,13 @@ static int reject_unsupported_registry_auth(const oci_reference_t *reference,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      build_url
+ Description:   Build a v2 API URL for a repository, appending a suffix
+ Parameters:    reference-> the registry/repository to build the URL for
+                suffix-> the path suffix to append, eg "/tags/list"
+ Returns:       pointer to a malloc'd URL string, or NULL if no memory
+ ******************************************************************/
 static char *build_url(const oci_reference_t *reference,
                        const char *suffix)
 {
@@ -62,6 +101,9 @@ static char *build_url(const oci_reference_t *reference,
     char *url;
     const char *scheme;
 
+    /* "localhost" and "127.0.0.1" are both 9 characters, so a single
+       length works for comparing against either when picking http
+       for local registries and https for everything else */
     scheme = (strncmp(reference->registry, "localhost", 9) == 0 ||
               strncmp(reference->registry, "127.0.0.1", 9) == 0) ?
              "http" : "https";
@@ -76,11 +118,25 @@ static char *build_url(const oci_reference_t *reference,
     return url;
 }
 
+/*************************************************** Gerph *********
+ Function:      selector_string
+ Description:   Get the string used to select a manifest, preferring
+                a digest over a tag
+ Parameters:    reference-> the registry reference to select from
+ Returns:       pointer to the digest, or the tag if no digest is set
+ ******************************************************************/
 static const char *selector_string(const oci_reference_t *reference)
 {
     return reference->digest != NULL ? reference->digest : reference->tag;
 }
 
+/*************************************************** Gerph *********
+ Function:      response_header
+ Description:   Find a named header in a fetch response, case-insensitively
+ Parameters:    response-> the response to search
+                name-> the header name to look for
+ Returns:       pointer to the header value, or NULL if not present
+ ******************************************************************/
 static const char *response_header(const url_fetch_response_t *response,
                                    const char *name)
 {
@@ -96,6 +152,14 @@ static const char *response_header(const url_fetch_response_t *response,
     return NULL;
 }
 
+/*************************************************** Gerph *********
+ Function:      looks_like_html
+ Description:   Check whether response body content looks like an HTML
+                page rather than the expected JSON
+ Parameters:    data-> the response body data
+                size = length of the response body data
+ Returns:       1 if the data looks like HTML, 0 if not
+ ******************************************************************/
 static int looks_like_html(const unsigned char *data, size_t size)
 {
     const char *scan;
@@ -120,6 +184,16 @@ static int looks_like_html(const unsigned char *data, size_t size)
     return 0;
 }
 
+/*************************************************** Gerph *********
+ Function:      validate_json_response
+ Description:   Check that a response looks like JSON, not an HTML
+                error/login page, before it is treated as registry data
+ Parameters:    response-> the response to validate
+                url-> the URL the response was fetched from, for errors
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if the response looks valid, 0 if it was rejected
+ ******************************************************************/
 static int validate_json_response(const url_fetch_response_t *response,
                                   const char *url,
                                   char *error,
@@ -132,6 +206,9 @@ static int validate_json_response(const url_fetch_response_t *response,
     content_type = response_header(response, "Content-Type");
     body = response->body;
     body_size = response->body_size;
+    /* Some registries sit behind proxies or captive portals that
+       return an HTML error/login page with a 2xx status; catch that
+       here rather than letting it fail obscurely in the JSON parser */
     if (content_type != NULL &&
         (strstr(content_type, "text/html") != NULL ||
          strstr(content_type, "application/xhtml") != NULL))
@@ -153,6 +230,19 @@ static int validate_json_response(const url_fetch_response_t *response,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      fetch_bytes
+ Description:   Fetch the body of a URL, checking the HTTP status and
+                optionally validating the response looks like JSON
+ Parameters:    url-> the URL to fetch
+                accept-> the Accept header to send, or NULL for none
+                expect_json = non-zero to validate the response as JSON
+                data_out-> where to store the fetched data
+                size_out-> where to store the size of the fetched data
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure (error is filled in)
+ ******************************************************************/
 static int fetch_bytes(const char *url,
                        const char *accept,
                        int expect_json,
@@ -198,6 +288,14 @@ static int fetch_bytes(const char *url,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      resolve_location
+ Description:   Resolve a Location header value (from a blob upload
+                start) into a full absolute URL
+ Parameters:    reference-> the registry reference the location relates to
+                location-> the Location header value to resolve
+ Returns:       pointer to a malloc'd URL string, or NULL if no memory
+ ******************************************************************/
 static char *resolve_location(const oci_reference_t *reference,
                               const char *location)
 {
@@ -208,6 +306,8 @@ static char *resolve_location(const oci_reference_t *reference,
     {
         return oras_strdup(location);
     }
+    /* "localhost" and "127.0.0.1" are both 9 characters, so a single
+       length works for comparing against either */
     scheme = (strncmp(reference->registry, "localhost", 9) == 0 ||
               strncmp(reference->registry, "127.0.0.1", 9) == 0) ?
              "http" : "https";
@@ -385,6 +485,9 @@ int oci_registry_push_blob(const oci_reference_t *reference,
         oras_set_error(error, error_size, "No memory for upload location");
         return 0;
     }
+    /* The Location returned by the upload-start request may already
+       carry a query string (eg a session token), so the digest must
+       be appended with '&' in that case rather than always '?' */
     sprintf(upload_url, "%s%s%s%s",
             location_url,
             strchr(location_url, '?') == NULL ? "?" : "&",

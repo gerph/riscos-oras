@@ -9,19 +9,60 @@
 
 #include "oras_types.h"
 
+/*************************************************** Gerph *********
+ Function:      riscos_metadata_read
+ Description:   Read RISC OS metadata (filetype, load/exec, attributes) for a file
+ Parameters:    path-> the file to read metadata for
+                meta-> where to store the metadata read
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed (error is filled in)
+ ******************************************************************/
 int riscos_metadata_read(const char *path,
                          riscos_file_meta_t *meta,
                          char *error,
                          size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_metadata_apply
+ Description:   Apply RISC OS metadata (filetype, load/exec, attributes) to a file
+ Parameters:    path-> the file to apply metadata to
+                meta-> the metadata to apply
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed (error is filled in)
+ ******************************************************************/
 int riscos_metadata_apply(const char *path,
                           const riscos_file_meta_t *meta,
                           char *error,
                           size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_metadata_to_annotations
+ Description:   Convert RISC OS metadata to OCI annotations
+ Parameters:    meta-> the metadata to convert
+                annotations-> where to store the resulting annotation list
+                annotation_count-> where to store the number of annotations
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed (error is filled in)
+ ******************************************************************/
 int riscos_metadata_to_annotations(const riscos_file_meta_t *meta,
                                    oras_annotation_t **annotations,
                                    size_t *annotation_count,
                                    char *error,
                                    size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      riscos_metadata_from_annotations
+ Description:   Convert OCI annotations to RISC OS metadata
+ Parameters:    annotations-> the annotation list to read
+                annotation_count = number of annotations in the list
+                meta-> where to store the resulting metadata
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed (error is filled in)
+ ******************************************************************/
 int riscos_metadata_from_annotations(const oras_annotation_t *annotations,
                                      size_t annotation_count,
                                      riscos_file_meta_t *meta,

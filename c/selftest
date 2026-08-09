@@ -34,6 +34,17 @@ static int test_failures = 0;
         } \
     } while (0)
 
+/*************************************************** Gerph *********
+ Function:      test_fetch_blob
+ Description:   Blob-fetch callback that serves data from an in-memory list
+ Parameters:    private_ref-> array of test blobs to search
+                descriptor-> descriptor whose digest is to be located
+                data_out-> where to store the allocated blob data
+                size_out-> where to store the blob size
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if found, 0 if not found or on error
+ ******************************************************************/
 static int test_fetch_blob(void *private_ref,
                            const oci_descriptor_t *descriptor,
                            unsigned char **data_out,
@@ -64,16 +75,28 @@ static int test_fetch_blob(void *private_ref,
     return 0;
 }
 
+/*************************************************** Gerph *********
+ Function:      ensure_dir
+ Description:   Create a directory for the self-tests, ignoring any error
+ Parameters:    path-> directory to create
+ Returns:       none
+ ******************************************************************/
 static void ensure_dir(const char *path)
 {
     os_filestr info;
 
     memset(&info, 0, sizeof(info));
-    info.action = 8;
+    info.action = 8;   /* OS_File 8: create directory */
     info.name = (char *)path;
     os_file(&info);
 }
 
+/*************************************************** Gerph *********
+ Function:      test_reference_parsing
+ Description:   Exercise OCI reference string parsing
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void test_reference_parsing(void)
 {
     char error[256];
@@ -97,6 +120,12 @@ static void test_reference_parsing(void)
     oras_free_reference(&reference);
 }
 
+/*************************************************** Gerph *********
+ Function:      test_metadata_annotations
+ Description:   Exercise RISC OS metadata to/from annotation conversion
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void test_metadata_annotations(void)
 {
     riscos_file_meta_t source;
@@ -134,6 +163,12 @@ static void test_metadata_annotations(void)
     oras_free_annotations(annotations, annotation_count);
 }
 
+/*************************************************** Gerph *********
+ Function:      test_manifest_and_paths
+ Description:   Exercise fileset path sanitisation and manifest selection
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void test_manifest_and_paths(void)
 {
     oci_manifest_t parsed;
@@ -165,6 +200,12 @@ static void test_manifest_and_paths(void)
     oras_free_manifest(&parsed);
 }
 
+/*************************************************** Gerph *********
+ Function:      test_fileset_plan_and_extract
+ Description:   Exercise fileset planning, manifest building and extraction
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void test_fileset_plan_and_extract(void)
 {
     char error[256];
@@ -224,6 +265,8 @@ static void test_fileset_plan_and_extract(void)
         EXPECT(count == sizeof(text_data) - 1, "extracted file size");
         EXPECT(memcmp(buffer, text_data, sizeof(text_data) - 1) == 0, "extracted file bytes");
     }
+    /* remove() takes native RISC OS pathnames ('.' separators), unlike the
+       Unix-style ('/') paths accepted by fopen() above */
     remove("TestOras.Input.readme,fff");
     remove("TestOras.Output.readme,fff");
     oras_free_manifest(&manifest);

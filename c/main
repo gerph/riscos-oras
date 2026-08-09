@@ -16,6 +16,14 @@
 
 #include "VersionNum"
 
+/*************************************************** Gerph *********
+ Function:      write_output
+ Description:   Write data to a file, or to stdout if no path given
+ Parameters:    data-> the bytes to write
+                size = number of bytes to write
+                path-> destination filename, or NULL for stdout
+ Returns:       none (exits the process on failure to open the file)
+ ******************************************************************/
 static void write_output(const unsigned char *data, size_t size, const char *path)
 {
     FILE *fp;
@@ -38,6 +46,18 @@ static void write_output(const unsigned char *data, size_t size, const char *pat
     fclose(fp);
 }
 
+/*************************************************** Gerph *********
+ Function:      pull_fetch_blob
+ Description:   Blob fetcher callback used to satisfy riscos_fileset_extract
+                by fetching a blob from the registry named by the reference
+ Parameters:    private_ref-> the oci_reference_t of the source registry
+                descriptor-> descriptor of the blob to fetch
+                data_out-> where to store the allocated blob data
+                size_out-> where to store the blob size
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if fetched ok, 0 on failure
+ ******************************************************************/
 static int pull_fetch_blob(void *private_ref,
                            const oci_descriptor_t *descriptor,
                            unsigned char **data_out,
@@ -56,6 +76,12 @@ static int pull_fetch_blob(void *private_ref,
                                    error_size);
 }
 
+/*************************************************** Gerph *********
+ Function:      print_usage
+ Description:   Print the command syntax summary to stdout
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void print_usage(void)
 {
     printf("oras " Module_FullVersionAndDate "\n");
@@ -68,6 +94,12 @@ static void print_usage(void)
     printf("  *oras --self-test\n");
 }
 
+/*************************************************** Gerph *********
+ Function:      skip_space
+ Description:   Skip past leading whitespace in a string
+ Parameters:    text-> the string to scan
+ Returns:       pointer to the first non-whitespace character
+ ******************************************************************/
 static const char *skip_space(const char *text)
 {
     while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n')
@@ -77,6 +109,14 @@ static const char *skip_space(const char *text)
     return text;
 }
 
+/*************************************************** Gerph *********
+ Function:      find_tags_array
+ Description:   Locate the opening of the "tags" JSON array within a tags
+                listing response
+ Parameters:    json-> the JSON text to search
+ Returns:       pointer to the character after the array's opening '[',
+                or NULL if no "tags" array was found
+ ******************************************************************/
 static const char *find_tags_array(const char *json)
 {
     const char *scan;
@@ -100,6 +140,16 @@ static const char *find_tags_array(const char *json)
     return NULL;
 }
 
+/*************************************************** Gerph *********
+ Function:      print_tags_fast
+ Description:   Print each tag string in a tags listing response without
+                performing a full JSON parse; used as a lightweight path
+                for the common case of a simple flat "tags" array
+ Parameters:    json-> the JSON text to scan
+ Returns:       1 if the array was printed successfully, 0 if the text
+                did not match the expected simple form (caller should
+                fall back to printing the raw JSON)
+ ******************************************************************/
 static int print_tags_fast(const char *json)
 {
     const char *scan;
@@ -162,6 +212,13 @@ static int print_tags_fast(const char *json)
     }
 }
 
+/*************************************************** Gerph *********
+ Function:      print_tags
+ Description:   Print the tags from a tags listing response, falling back
+                to printing the raw JSON if the fast-path scan fails
+ Parameters:    json-> the JSON text to print
+ Returns:       none
+ ******************************************************************/
 static void print_tags(const char *json)
 {
     if (!print_tags_fast(json))
@@ -170,6 +227,15 @@ static void print_tags(const char *json)
     }
 }
 
+/*************************************************** Gerph *********
+ Function:      main
+ Description:   Entry point for the oras command line tool; dispatches to
+                the pull/push/manifest/blob/tags/self-test operations
+                according to the command line arguments
+ Parameters:    argc = number of command line arguments
+                argv-> array of argument strings
+ Returns:       does not return; exits with EXIT_SUCCESS or EXIT_FAILURE
+ ******************************************************************/
 int main(int argc, char *argv[])
 {
     char error[256];
