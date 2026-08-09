@@ -108,6 +108,8 @@ bool escape_check(void)
 
 
 #define OSByte_AcknowledgeEscape 0x7E
+#define OSReadLine_PasswordFlag 0x40000000U
+#define OSReadLine_PasswordEcho '*'
 
 /*************************************************** Gerph *********
  Function:      escape_acknowledge
@@ -206,12 +208,37 @@ escape:
 _kernel_oserror *os_readline_secret(char *line, int len)
 {
     _kernel_oserror *err;
+    uint32_t read = 0;
+    uint32_t flags = 0;
+    void *masked_line;
 
-    _swi(OS_WriteC, _IN(0), 21);
-    err = os_readline(line, len);
-    _swi(OS_WriteC, _IN(0), 6);
-    _swi(OS_NewLine, 0);
-    return err;
+    masked_line = (void *)((uintptr_t)line | OSReadLine_PasswordFlag);
+#ifdef __riscos64
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUTR(0, 1),
+                line, len, 32, 128,
+                OSReadLine_PasswordFlag | OSReadLine_PasswordEcho,
+                &flags, &read);
+    if (err != NULL) return err;
+    if (flags) return Err_Escape;
+#else
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS),
+                line, len, 32, 128,
+                OSReadLine_PasswordFlag | OSReadLine_PasswordEcho,
+                &read, &flags);
+#ifndef ErrorNumber_ModuleBadSWI
+#define ErrorNumber_ModuleBadSWI          0x110
+#endif
+    if (err != NULL && err->errnum == ErrorNumber_ModuleBadSWI)
+    {
+        err = _swix(OS_ReadLine, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS),
+                    masked_line, len, 32, 128, OSReadLine_PasswordEcho,
+                    &read, &flags);
+    }
+    if (err != NULL) return err;
+    if (flags & _C) return Err_Escape;
+#endif
+    line[read] = '\0';
+    return NULL;
 }
 
 /*************************************************** Gerph *********
