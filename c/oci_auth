@@ -111,7 +111,8 @@ static cJSON *read_config(int *missing_out, char *error, size_t error_size)
     {
         *missing_out = 1;
         oras_set_error(error, error_size,
-                       "Credential file %s is unset or unreadable", ORAS_AUTH_FILE);
+                       "Credential file %s does not exist or cannot be read; run *oras login first",
+                       ORAS_AUTH_FILE);
         return NULL;
     }
     fseek(fp, 0, SEEK_END);
