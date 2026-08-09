@@ -20,9 +20,12 @@ static int append_entry(riscos_fileset_entry_t **entries,
                         const char *relative_path,
                         char *error,
                         size_t error_size);
-static int create_parent_directories(const char *path,
-                                     char *error,
-                                     size_t error_size);
+static int build_output_path(const char *directory,
+                             const char *safe_path,
+                             char *output_path,
+                             size_t output_path_size,
+                             char *error,
+                             size_t error_size);
 static int path_object_type(const char *path);
 
 int riscos_fileset_sanitise_path(const char *path,
@@ -376,46 +379,59 @@ int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
 }
 
 /*************************************************** Gerph *********
- Function:      create_parent_directories
- Description:   Create any missing directories in a path's parent chain
- Parameters:    path-> full path whose parent directories should exist
+ Function:      build_output_path
+ Description:   Convert an OCI output path to a RISC OS path and create
+                its missing parent directories
+ Parameters:    directory-> destination directory in RISC OS notation
+                safe_path-> validated OCI-relative path
+                output_path-> buffer for resulting RISC OS path
+                output_path_size = size of output_path
                 error-> buffer for error message
                 error_size = size of the error buffer
  Returns:       1 on success, 0 on failure
  ******************************************************************/
-static int create_parent_directories(const char *path,
-                                     char *error,
-                                     size_t error_size)
+static int build_output_path(const char *directory,
+                             const char *safe_path,
+                             char *output_path,
+                             size_t output_path_size,
+                             char *error,
+                             size_t error_size)
 {
-    char *copy;
-    char *slash;
+    const char *component;
+    const char *slash;
+    size_t output_length;
+    size_t component_length;
 
-    copy = oras_strdup(path);
-    if (copy == NULL)
+    if (directory[0] == '\0' || strlen(directory) >= output_path_size)
     {
-        oras_set_error(error, error_size, "No memory for directory creation");
+        oras_set_error(error, error_size, "Invalid destination directory '%s'", directory);
         return 0;
     }
-    slash = strchr(copy, '/');
-    while (slash != NULL)
+    strcpy(output_path, directory);
+    output_length = strlen(output_path);
+    component = safe_path;
+    while (component != NULL)
     {
-        /* Temporarily truncate at each '/' in turn so each ancestor
-           directory is created before its children */
-        *slash = '\0';
-        if (copy[0] != '\0' && strcmp(copy, ".") != 0 &&
-            path_object_type(copy) == 0)
+        slash = strchr(component, '/');
+        component_length = slash == NULL ? strlen(component) :
+                                            (size_t)(slash - component);
+        if (output_length + 1 + component_length >= output_path_size)
         {
-            if (!oras_os_file_create_directory(copy))
-            {
-                oras_set_error(error, error_size, "Unable to create directory '%s'", copy);
-                free(copy);
-                return 0;
-            }
+            oras_set_error(error, error_size, "Output path is too long");
+            return 0;
         }
-        *slash = '/';
-        slash = strchr(slash + 1, '/');
+        output_path[output_length++] = '.';
+        memcpy(output_path + output_length, component, component_length);
+        output_length += component_length;
+        output_path[output_length] = '\0';
+        if (slash != NULL && path_object_type(output_path) == 0 &&
+            !oras_os_file_create_directory(output_path))
+        {
+            oras_set_error(error, error_size, "Unable to create directory '%s'", output_path);
+            return 0;
+        }
+        component = slash == NULL ? NULL : slash + 1;
     }
-    free(copy);
     return 1;
 }
 
@@ -465,8 +481,12 @@ int riscos_fileset_extract(const oci_manifest_t *manifest,
                 return 0;
             }
         }
-        sprintf(output_path, "%s/%s", directory, safe_path);
-        if (!create_parent_directories(output_path, error, error_size))
+        if (!build_output_path(directory,
+                               safe_path,
+                               output_path,
+                               sizeof(output_path),
+                               error,
+                               error_size))
         {
             free(safe_path);
             return 0;

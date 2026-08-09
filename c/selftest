@@ -284,9 +284,9 @@ static void test_fileset_plan_and_extract(void)
     blobs[1].data = NULL;
     blobs[1].size = 0;
 
-    ensure_dir("TestOras/Output");
+    ensure_dir("TestOras.Output");
     EXPECT(riscos_fileset_extract(&manifest,
-                                  "TestOras/Output",
+                                  "TestOras.Output",
                                   test_fetch_blob,
                                   blobs,
                                   error,
@@ -296,7 +296,7 @@ static void test_fileset_plan_and_extract(void)
     {
         printf("extract error: %s\n", error);
     }
-    fp = fopen("TestOras/Output/readme,fff", "rb");
+    fp = fopen("TestOras.Output.readme,fff", "rb");
     EXPECT(fp != NULL, "extracted file exists");
     if (fp != NULL)
     {

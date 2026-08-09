@@ -386,7 +386,7 @@ int main(int argc, char *argv[])
         oci_manifest_t manifest;
         const char *directory;
 
-        directory = argc >= 4 ? argv[3] : ".";
+        directory = argc >= 4 ? argv[3] : "@";
         if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
             !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)) ||
             !oci_manifest_parse(json, &manifest, error, sizeof(error)))
