@@ -13,6 +13,8 @@ Primary commands:
 - `*oras pull <reference> [<directory>]`
 - `*oras push [--source <uri|github:owner/repository>] <reference> <path>...`
 - `*oras manifest fetch [--pretty] <reference> [<file>]`
+- `*oras manifest fetch-config <reference> [<file>]`
+- `*oras manifest push <reference> <file>`
 - `*oras blob fetch <reference> <digest> [<file>]`
 - `*oras tags <repository>`
 - `*oras login <registry> <username>`
@@ -81,6 +83,8 @@ In scope:
 - anonymous, Basic and Bearer-authenticated registry access
 - manifest fetch
 - formatted manifest fetch on request
+- config blob fetch from a manifest descriptor
+- prepared manifest and index push
 - blob fetch
 - tags listing
 - fileset push planning

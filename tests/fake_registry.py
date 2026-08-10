@@ -23,12 +23,19 @@ def sha256_digest(data: bytes) -> str:
 def make_fixture_state() -> dict:
     blob = b"fixture pull data\n"
     blob_digest = sha256_digest(blob)
+    config = b'{"architecture":"arm","os":"riscos"}'
+    config_digest = sha256_digest(config)
     manifest = {
         "schemaVersion": 2,
         "mediaType": MANIFEST_MEDIA_TYPE,
         "artifactType": FILES_ARTIFACT_TYPE,
         "annotations": {
             "org.riscos.artifact.format": "fileset-v1",
+        },
+        "config": {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": config_digest,
+            "size": len(config),
         },
         "layers": [
             {
@@ -49,7 +56,7 @@ def make_fixture_state() -> dict:
             "demo/pull": {
                 "tags": {"latest": manifest_digest},
                 "manifests": {manifest_digest: manifest_bytes},
-                "blobs": {blob_digest: blob},
+                "blobs": {blob_digest: blob, config_digest: config},
             },
             "demo/push": {
                 "tags": {},
@@ -59,7 +66,7 @@ def make_fixture_state() -> dict:
             "demo/basic": {
                 "tags": {"latest": manifest_digest},
                 "manifests": {manifest_digest: manifest_bytes},
-                "blobs": {blob_digest: blob},
+                "blobs": {blob_digest: blob, config_digest: config},
             },
             "demo/bearer": {"tags": {}, "manifests": {}, "blobs": {}},
         },

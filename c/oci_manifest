@@ -227,6 +227,8 @@ int oci_manifest_parse(const char *json,
     cJSON *manifests;
     cJSON *annotations;
     cJSON *item;
+    cJSON *subject;
+    cJSON *config;
     int index;
 
     memset(manifest, 0, sizeof(*manifest));
@@ -274,6 +276,28 @@ int oci_manifest_parse(const char *json,
                 }
             }
         }
+    }
+    subject = cJSON_GetObjectItemCaseSensitive(root, "subject");
+    if (cJSON_IsObject(subject))
+    {
+        if (!parse_descriptor(subject, &manifest->subject, error, error_size))
+        {
+            cJSON_Delete(root);
+            oras_free_manifest(manifest);
+            return 0;
+        }
+        manifest->has_subject = true;
+    }
+    config = cJSON_GetObjectItemCaseSensitive(root, "config");
+    if (cJSON_IsObject(config))
+    {
+        if (!parse_descriptor(config, &manifest->config, error, error_size))
+        {
+            cJSON_Delete(root);
+            oras_free_manifest(manifest);
+            return 0;
+        }
+        manifest->has_config = true;
     }
     layers = cJSON_GetObjectItemCaseSensitive(root, "layers");
     if (cJSON_IsArray(layers))
@@ -339,11 +363,6 @@ int oci_manifest_write(const oci_manifest_t *manifest,
     char *json;
     size_t i;
 
-    if (manifest->manifest_count != 0)
-    {
-        oras_set_error(error, error_size, "Index serialisation is not implemented in v1");
-        return 0;
-    }
     root = cJSON_CreateObject();
     if (root == NULL)
     {
@@ -358,6 +377,28 @@ int oci_manifest_write(const oci_manifest_t *manifest,
     {
         cJSON_AddStringToObject(root, "artifactType", manifest->artifact_type);
     }
+    if (manifest->has_subject)
+    {
+        item = descriptor_to_json(&manifest->subject);
+        if (item == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for subject JSON");
+            return 0;
+        }
+        cJSON_AddItemToObject(root, "subject", item);
+    }
+    if (manifest->has_config)
+    {
+        item = descriptor_to_json(&manifest->config);
+        if (item == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for config JSON");
+            return 0;
+        }
+        cJSON_AddItemToObject(root, "config", item);
+    }
     if (manifest->annotation_count != 0)
     {
         annotations = cJSON_AddObjectToObject(root, "annotations");
@@ -368,10 +409,12 @@ int oci_manifest_write(const oci_manifest_t *manifest,
                                     manifest->annotations[i].value);
         }
     }
-    layers = cJSON_AddArrayToObject(root, "layers");
-    for (i = 0; i < manifest->layer_count; ++i)
+    layers = cJSON_AddArrayToObject(root,
+                                    manifest->manifest_count != 0 ? "manifests" : "layers");
+    for (i = 0; i < (manifest->manifest_count != 0 ? manifest->manifest_count : manifest->layer_count); ++i)
     {
-        item = descriptor_to_json(&manifest->layers[i]);
+        item = descriptor_to_json(manifest->manifest_count != 0 ?
+                                  &manifest->manifests[i] : &manifest->layers[i]);
         if (item == NULL)
         {
             cJSON_Delete(root);

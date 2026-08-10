@@ -62,6 +62,16 @@ echo "-- formatted manifest fetch against fixture"
 run_oras_text manifest fetch --pretty "localhost:$PORT/demo/pull:latest" >"fixture-manifest-pretty.json"
 grep -qx '{' "fixture-manifest-pretty.json"
 
+echo "-- config fetch against fixture"
+run_oras_blob_to_file "fixture-config.json" manifest fetch-config \
+    "localhost:$PORT/demo/pull:latest"
+grep -q '"architecture":"arm"' "fixture-config.json"
+
+echo "-- raw manifest push preserves the document"
+run_oras_text manifest push "localhost:$PORT/demo/pull:copied" "fixture-manifest/json"
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:copied" >"copied-manifest.json"
+cmp "fixture-manifest.json" "copied-manifest.json"
+
 echo "-- blob fetch against fixture"
 run_oras blob fetch "localhost:$PORT/demo/pull:latest" \
     "sha256:62a72c8aa30dedb7aa393331a43175426b5d3af694205ad1a33973716e8a75ed" \
@@ -71,6 +81,28 @@ cmp "fixture-blob.bin" <(printf 'fixture pull data\n')
 echo "-- tags against fixture repository"
 run_oras_text tags "localhost:$PORT/demo/pull" >"tags.json"
 grep -qx 'latest' "tags.json"
+
+echo "-- tag fixture manifest without reuploading it"
+run_oras_text tag "localhost:$PORT/demo/pull:latest" stable
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:stable" >"stable-manifest.json"
+cmp "fixture-manifest.json" "stable-manifest.json"
+run_oras_text tags "localhost:$PORT/demo/pull" >"tags-after-tag.json"
+grep -qx 'stable' "tags-after-tag.json"
+
+echo "-- attach two files and retain both referrers"
+printf 'attachment one\n' >"attachment-one,fff"
+printf 'attachment two\n' >"attachment-two,fff"
+run_oras_text attach "localhost:$PORT/demo/pull:latest" "attachment-one,fff"
+run_oras_text attach "localhost:$PORT/demo/pull:latest" "attachment-two,fff"
+ref_tag=$(python3 - <<'PY'
+import hashlib
+print('sha256-' + hashlib.sha256(open('fixture-manifest.json', 'rb').read().rstrip(b'\n')).hexdigest() + '.referrers')
+PY
+)
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:$ref_tag" >"referrers.json"
+python3 -c 'import json; assert len(json.load(open("referrers.json"))["manifests"]) == 2'
+run_oras_text discover "localhost:$PORT/demo/pull:latest" >"discovered.txt"
+test "$(wc -l <"discovered.txt")" -eq 2
 
 echo "-- pull fixture fileset"
 mkdir -p "pulled"

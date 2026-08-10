@@ -24,8 +24,13 @@ Run `*oras` with no arguments to display the command syntax.
 *oras pull <reference> [<directory>]
 *oras push [--source <uri|github:owner/repository>] <reference> <path>...
 *oras manifest fetch [--pretty] <reference> [<file>]
+*oras manifest fetch-config <reference> [<file>]
+*oras manifest push <reference> <file>
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
+*oras tag <reference> <tag>...
+*oras attach <reference> <path>...
+*oras discover <reference>
 *oras login <registry> <username>
 *oras logout <registry>
 ```
@@ -63,8 +68,25 @@ source repository. Source metadata is never added unless requested.
 `manifest fetch` writes the raw manifest JSON to standard output, ending it
 with a newline, or writes the unmodified JSON to its optional file argument.
 Pass `--pretty` to format the JSON for human reading before writing it.
+`manifest fetch-config` retrieves the blob named by a manifest's OCI config
+descriptor. It reports an error when the selected document is an index or a
+manifest without a config descriptor. `manifest push` validates a JSON
+manifest or index and publishes its exact bytes using its declared media type;
+it does not upload any blobs referenced by that document.
 `blob fetch` similarly writes a named blob. `tags` prints one tag per line
 when the registry returns a normal tag list.
+
+`tag` makes one or more additional names for the manifest selected by its
+source reference. It copies neither blobs nor files, and always creates tags
+in the source reference's own registry and repository. Tag arguments are tag
+names, not full OCI references.
+
+`attach` publishes the supplied files as a RISC OS fileset attachment to an
+existing manifest. Attachments are stored through the OCI referrers tag scheme;
+repeated attachments retain the earlier referrer descriptors.
+
+`discover` lists the descriptors of fileset attachments for a manifest. It
+uses the OCI referrers tag scheme written by `attach`.
 
 `login` prompts for the secret without echoing it, then replaces the matching
 `auths.<registry>.auth` entry. `logout` removes only that registry entry.
@@ -97,6 +119,13 @@ Inspect the raw manifest, or print an indented version for people to read:
 The file form writes the registry's JSON unchanged. The screen form always
 ends with a newline; `--pretty` is the only option that reformats it.
 
+Retrieve a manifest's config blob, or publish prepared manifest JSON:
+
+```text
+*oras manifest fetch-config registry.example.net/charles/demo:1.0 Config,fff
+*oras manifest push registry.example.net/charles/demo:copy DemoManifest,fff
+```
+
 Obtain a blob whose digest was listed in the manifest:
 
 ```text
@@ -107,6 +136,19 @@ List the available tags in a repository:
 
 ```text
 *oras tags registry.example.net/charles/demo
+```
+
+Give an existing manifest a release tag without reuploading its files:
+
+```text
+*oras tag registry.example.net/charles/demo:1.0 stable release-1
+```
+
+Attach release notes to a published artifact:
+
+```text
+*oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff
+*oras discover registry.example.net/charles/demo:1.0
 ```
 
 Log in before publishing to GHCR:
