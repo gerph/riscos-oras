@@ -26,6 +26,7 @@ Run `*oras` with no arguments to display the command syntax.
 *oras manifest fetch [--pretty] <reference> [<file>]
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
+*oras tag <reference> <tag>...
 *oras login <registry> <username>
 *oras logout <registry>
 ```
@@ -65,6 +66,11 @@ with a newline, or writes the unmodified JSON to its optional file argument.
 Pass `--pretty` to format the JSON for human reading before writing it.
 `blob fetch` similarly writes a named blob. `tags` prints one tag per line
 when the registry returns a normal tag list.
+
+`tag` makes one or more additional names for the manifest selected by its
+source reference. It copies neither blobs nor files, and always creates tags
+in the source reference's own registry and repository. Tag arguments are tag
+names, not full OCI references.
 
 `login` prompts for the secret without echoing it, then replaces the matching
 `auths.<registry>.auth` entry. `logout` removes only that registry entry.
@@ -107,6 +113,12 @@ List the available tags in a repository:
 
 ```text
 *oras tags registry.example.net/charles/demo
+```
+
+Give an existing manifest a release tag without reuploading its files:
+
+```text
+*oras tag registry.example.net/charles/demo:1.0 stable release-1
 ```
 
 Log in before publishing to GHCR:

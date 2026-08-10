@@ -97,7 +97,7 @@ not accept the request or returns an unsuccessful HTTP status.
 <command-definition name="oras pull"
                     description="Retrieves a RISC OS fileset artifact">
 <syntax>
- pull <userreplace>reference</userreplace>
+ <userreplace>reference</userreplace>
  <optional><userreplace>directory</userreplace></optional>
 </syntax>
 <parameter name="reference">The OCI artifact reference to retrieve.</parameter>
@@ -119,7 +119,7 @@ metadata restored. Unsafe stored paths and duplicate output paths are refused.
 <command-definition name="oras push"
                     description="Publishes files as a RISC OS fileset artifact">
 <syntax>
- push <optional><userreplace>--source</userreplace> <userreplace>uri</userreplace></optional>
+ <optional><userreplace>--source</userreplace> <userreplace>uri</userreplace></optional>
  <userreplace>reference</userreplace> <userreplace>path</userreplace>...
 </syntax>
 <parameter name="reference">The OCI artifact reference to publish.</parameter>
@@ -143,7 +143,7 @@ not inferred from the target registry or repository.
 <command-definition name="oras manifest fetch"
                     description="Retrieves raw OCI manifest JSON">
 <syntax>
- manifest fetch <optional><userreplace>--pretty</userreplace></optional>
+ <optional><userreplace>--pretty</userreplace></optional>
  <userreplace>reference</userreplace>
  <optional><userreplace>file</userreplace></optional>
 </syntax>
@@ -165,7 +165,7 @@ the JSON for human reading before writing it.
 <command-definition name="oras blob fetch"
                     description="Retrieves one OCI blob">
 <syntax>
- blob fetch <userreplace>reference</userreplace> <userreplace>digest</userreplace>
+ <userreplace>reference</userreplace> <userreplace>digest</userreplace>
  <optional><userreplace>file</userreplace></optional>
 </syntax>
 <parameter name="reference">An OCI reference identifying the registry and repository.</parameter>
@@ -180,7 +180,7 @@ the JSON for human reading before writing it.
 <command-definition name="oras tags"
                     description="Lists tags in an OCI repository">
 <syntax>
- tags <userreplace>repository</userreplace>
+ <userreplace>repository</userreplace>
 </syntax>
 <parameter name="repository">An OCI registry host and repository path.</parameter>
 <use><p>Lists the repository tags, normally with one tag on each output line.</p></use>
@@ -189,9 +189,27 @@ the JSON for human reading before writing it.
 </example>
 </command-definition>
 
+<command-definition name="oras tag"
+                    description="Adds names for an existing OCI manifest">
+<syntax>
+ <userreplace>reference</userreplace> <userreplace>tag</userreplace>...
+</syntax>
+<parameter name="reference">The OCI manifest reference to name.</parameter>
+<parameter name="tag">A new tag name in the same repository.</parameter>
+<use><p>
+Fetches the selected manifest and writes its unchanged bytes under each given
+tag. It does not upload blobs or copy files. The new names always refer to the
+same registry and repository as the source reference; tag arguments are not
+full OCI references.
+</p></use>
+<example>
+<command>*oras tag registry.example.net/charles/demo:1.0 stable release-1</command>
+</example>
+</command-definition>
+
 <command-definition name="oras login"
                     description="Stores a registry login credential">
-<syntax> login <userreplace>registry</userreplace> <userreplace>username</userreplace> </syntax>
+<syntax> <userreplace>registry</userreplace> <userreplace>username</userreplace> </syntax>
 <parameter name="registry">The exact registry host, optionally including its port.</parameter>
 <parameter name="username">The user name to store.</parameter>
 <use><p>Prompts for a non-echoed secret and stores a Docker-compatible
@@ -201,14 +219,13 @@ the JSON for human reading before writing it.
 
 <command-definition name="oras logout"
                     description="Removes a registry login credential">
-<syntax> logout <userreplace>registry</userreplace> </syntax>
+<syntax> <userreplace>registry</userreplace> </syntax>
 <parameter name="registry">The exact registry host, optionally including its port.</parameter>
 <use><p>Removes only the matching credential entry from the configured credential file.</p></use>
 </command-definition>
 
 <command-definition name="oras --self-test"
                     description="Runs local ORAS self-tests">
-<syntax> --self-test </syntax>
 <use><p>
 Runs non-network checks for reference parsing, fileset metadata, and safe file
 extraction. A successful run prints <systemoutput>All self-tests passed</systemoutput>.
@@ -237,6 +254,7 @@ the digest and metadata for each file layer.
 *oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff
 *oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff
 *oras tags registry.example.net/charles/demo
+*oras tag registry.example.net/charles/demo:1.0 stable
 </extended-example></p>
 </subsection>
 <subsection title="Publishing to and retrieving from GHCR">
@@ -258,6 +276,9 @@ filename and recognised metadata below the chosen destination.
  <maintainer><email name="Charles Ferguson" address="gerph@gerph.org" /></maintainer>
  <disclaimer><p>&copy; Charles Ferguson, 2026.</p></disclaimer>
  <history>
+  <revision number="4" author="Charles Ferguson" date="10 Aug 2026" title="Manifest tags">
+   <change>Documented adding repository-local manifest tags without reuploading blobs.</change>
+  </revision>
   <revision number="3" author="Charles Ferguson" date="09 Aug 2026" title="Fileset usage examples">
    <change>Documented formatted manifests, GHCR publishing, pulling, and duplicate leaf-name limits.</change>
   </revision>

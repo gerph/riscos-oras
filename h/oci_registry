@@ -88,4 +88,18 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
                                char *error,
                                size_t error_size);
 
+/*************************************************** Gerph *********
+ Function:      oci_registry_tag_manifest
+ Description:   Add a tag for an existing manifest in the same repository
+ Parameters:    reference-> existing manifest reference to copy
+                tag-> new tag name in the same repository
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if the manifest was tagged, 0 on failure
+ ******************************************************************/
+int oci_registry_tag_manifest(const oci_reference_t *reference,
+                              const char *tag,
+                              char *error,
+                              size_t error_size);
+
 #endif

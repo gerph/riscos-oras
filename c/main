@@ -131,6 +131,7 @@ static void print_usage(void)
     printf("  *oras manifest fetch [--pretty] <reference> [<file>]\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
+    printf("  *oras tag <reference> <tag>...\n");
     printf("  *oras login <registry> <username>\n");
     printf("  *oras logout <registry>\n");
     printf("  *oras --self-test\n");
@@ -270,6 +271,41 @@ static void print_tags(const char *json)
 }
 
 /*************************************************** Gerph *********
+ Function:      is_valid_tag
+ Description:   Check that a command tag has the OCI tag character form
+ Parameters:    tag-> tag text to validate
+ Returns:       1 if valid, 0 otherwise
+ ******************************************************************/
+static int is_valid_tag(const char *tag)
+{
+    size_t length;
+    const char *scan;
+
+    length = strlen(tag);
+    if (length == 0 || length > 128)
+    {
+        return 0;
+    }
+    if (!((tag[0] >= 'a' && tag[0] <= 'z') ||
+          (tag[0] >= 'A' && tag[0] <= 'Z') ||
+          (tag[0] >= '0' && tag[0] <= '9') || tag[0] == '_'))
+    {
+        return 0;
+    }
+    for (scan = tag; *scan != '\0'; ++scan)
+    {
+        if (!((*scan >= 'a' && *scan <= 'z') ||
+               (*scan >= 'A' && *scan <= 'Z') ||
+               (*scan >= '0' && *scan <= '9') ||
+               *scan == '_' || *scan == '.' || *scan == '-'))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*************************************************** Gerph *********
  Function:      source_uri_from_option
  Description:   Expand a source option, including the GitHub shorthand
  Parameters:    option-> source URI or github:owner/repository shorthand
@@ -323,7 +359,7 @@ static int source_uri_from_option(const char *option,
 /*************************************************** Gerph *********
  Function:      main
  Description:   Entry point for the oras command line tool; dispatches to
-                the pull/push/manifest/blob/tags/self-test operations
+                the pull/push/manifest/blob/tags/tag/self-test operations
                 according to the command line arguments
  Parameters:    argc = number of command line arguments
                 argv-> array of argument strings
@@ -443,6 +479,36 @@ int main(int argc, char *argv[])
         }
         print_tags(json);
         free(json);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "tag") == 0 && argc >= 4)
+    {
+        oci_reference_t reference;
+        int i;
+
+        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        for (i = 3; i < argc; ++i)
+        {
+            if (!is_valid_tag(argv[i]))
+            {
+                fprintf(stderr, "Invalid OCI tag '%s'\n", argv[i]);
+                oras_free_reference(&reference);
+                exit(EXIT_FAILURE);
+            }
+            if (!oci_registry_tag_manifest(&reference, argv[i], error, sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", error);
+                oras_free_reference(&reference);
+                exit(EXIT_FAILURE);
+            }
+            printf("Tagged %s/%s as %s\n",
+                   reference.registry, reference.repository, argv[i]);
+        }
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);
     }

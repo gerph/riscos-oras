@@ -72,6 +72,13 @@ echo "-- tags against fixture repository"
 run_oras_text tags "localhost:$PORT/demo/pull" >"tags.json"
 grep -qx 'latest' "tags.json"
 
+echo "-- tag fixture manifest without reuploading it"
+run_oras_text tag "localhost:$PORT/demo/pull:latest" stable
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:stable" >"stable-manifest.json"
+cmp "fixture-manifest.json" "stable-manifest.json"
+run_oras_text tags "localhost:$PORT/demo/pull" >"tags-after-tag.json"
+grep -qx 'stable' "tags-after-tag.json"
+
 echo "-- pull fixture fileset"
 mkdir -p "pulled"
 run_oras pull "localhost:$PORT/demo/pull:latest" "pulled"

@@ -731,3 +731,106 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
     oras_free_response(&response);
     return 1;
 }
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_tag_manifest
+ Description:   Fetch an existing manifest and store its exact bytes under
+                another tag in the same repository
+ Parameters:    reference-> existing manifest reference to copy
+                tag-> new tag name in the same repository
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if the manifest was tagged, 0 on failure
+ ******************************************************************/
+int oci_registry_tag_manifest(const oci_reference_t *reference,
+                              const char *tag,
+                              char *error,
+                              size_t error_size)
+{
+    char source_suffix[1024];
+    char target_suffix[1024];
+    char *source_url;
+    char *target_url;
+    const char *media_type;
+    url_fetch_header_t accept_header;
+    url_fetch_header_t put_headers[2];
+    url_fetch_request_t request;
+    url_fetch_response_t source_response;
+    url_fetch_response_t target_response;
+    char length_text[32];
+
+    sprintf(source_suffix, "/manifests/%s", selector_string(reference));
+    source_url = build_url(reference, source_suffix);
+    if (source_url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for source manifest URL");
+        return 0;
+    }
+    accept_header.name = "Accept";
+    accept_header.value = ORAS_MANIFEST_MEDIA_TYPE ", " ORAS_INDEX_MEDIA_TYPE ", application/vnd.docker.distribution.manifest.v2+json";
+    memset(&request, 0, sizeof(request));
+    request.url = source_url;
+    request.method = "GET";
+    request.headers = &accept_header;
+    request.header_count = 1;
+    if (!oci_registry_request(reference, &request, &source_response, error, error_size))
+    {
+        free(source_url);
+        return 0;
+    }
+    free(source_url);
+    if (source_response.status_code < 200 || source_response.status_code >= 300)
+    {
+        oras_set_error(error, error_size, "Manifest fetch for tag failed with HTTP %d",
+                       source_response.status_code);
+        oras_free_response(&source_response);
+        return 0;
+    }
+    if (!validate_json_response(&source_response, "manifest for tag", error, error_size))
+    {
+        oras_free_response(&source_response);
+        return 0;
+    }
+    media_type = response_header(&source_response, "Content-Type");
+    if (media_type == NULL)
+    {
+        media_type = ORAS_MANIFEST_MEDIA_TYPE;
+    }
+    sprintf(target_suffix, "/manifests/%s", tag);
+    target_url = build_url(reference, target_suffix);
+    if (target_url == NULL)
+    {
+        oras_free_response(&source_response);
+        oras_set_error(error, error_size, "No memory for target manifest URL");
+        return 0;
+    }
+    sprintf(length_text, "%u", (unsigned int)source_response.body_size);
+    put_headers[0].name = "Content-Type";
+    put_headers[0].value = (char *)media_type;
+    put_headers[1].name = "Content-Length";
+    put_headers[1].value = length_text;
+    memset(&request, 0, sizeof(request));
+    request.url = target_url;
+    request.method = "PUT";
+    request.headers = put_headers;
+    request.header_count = 2;
+    request.body = source_response.body;
+    request.body_size = source_response.body_size;
+    if (!oci_registry_request(reference, &request, &target_response, error, error_size))
+    {
+        free(target_url);
+        oras_free_response(&source_response);
+        return 0;
+    }
+    free(target_url);
+    oras_free_response(&source_response);
+    if (target_response.status_code < 200 || target_response.status_code >= 300)
+    {
+        oras_set_error(error, error_size, "Manifest tag failed with HTTP %d",
+                       target_response.status_code);
+        oras_free_response(&target_response);
+        return 0;
+    }
+    oras_free_response(&target_response);
+    return 1;
+}
