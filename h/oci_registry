@@ -24,6 +24,22 @@ int oci_registry_fetch_manifest(const oci_reference_t *reference,
                                 size_t error_size);
 
 /*************************************************** Gerph *********
+ Function:      oci_registry_fetch_manifest_optional
+ Description:   Fetch a manifest, distinguishing an absent tag from failure
+ Parameters:    reference-> registry/repository/tag or digest to fetch
+                json_out-> fetched manifest text when found
+                found_out-> receives 1 when found, 0 when absent
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if fetched or absent, 0 on failure
+ ******************************************************************/
+int oci_registry_fetch_manifest_optional(const oci_reference_t *reference,
+                                         char **json_out,
+                                         int *found_out,
+                                         char *error,
+                                         size_t error_size);
+
+/*************************************************** Gerph *********
  Function:      oci_registry_fetch_blob
  Description:   Fetch a blob from an OCI registry by digest
  Parameters:    reference-> the registry/repository to fetch from
@@ -87,6 +103,22 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
                                const char *manifest_json,
                                char *error,
                                size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_registry_push_manifest_as
+ Description:   Push a manifest or index with its declared media type
+ Parameters:    reference-> registry/repository/tag or digest to push to
+                manifest_json-> manifest or index JSON text
+                media_type-> OCI manifest or index media type
+                error-> buffer to receive an error message on failure
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 on failure
+ ******************************************************************/
+int oci_registry_push_manifest_as(const oci_reference_t *reference,
+                                  const char *manifest_json,
+                                  const char *media_type,
+                                  char *error,
+                                  size_t error_size);
 
 /*************************************************** Gerph *********
  Function:      oci_registry_tag_manifest

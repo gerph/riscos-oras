@@ -94,6 +94,24 @@ not accept the request or returns an unsuccessful HTTP status.
 </use>
 </command-definition>
 
+<command-definition name="oras attach"
+                    description="Attaches RISC OS files to an OCI manifest">
+<syntax>
+ <userreplace>reference</userreplace> <userreplace>path</userreplace>...
+</syntax>
+<parameter name="reference">The OCI manifest to attach files to.</parameter>
+<parameter name="path">A file to include in the attachment.</parameter>
+<use><p>
+Uploads the files as a RISC OS fileset manifest whose OCI subject is the
+selected manifest. Attachments are published using the OCI referrers tag
+scheme. Existing referrer entries are retained when another attachment is
+published for the same subject.
+</p></use>
+<example>
+<command>*oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff</command>
+</example>
+</command-definition>
+
 <command-definition name="oras pull"
                     description="Retrieves a RISC OS fileset artifact">
 <syntax>
@@ -255,6 +273,7 @@ the digest and metadata for each file layer.
 *oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff
 *oras tags registry.example.net/charles/demo
 *oras tag registry.example.net/charles/demo:1.0 stable
+*oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff
 </extended-example></p>
 </subsection>
 <subsection title="Publishing to and retrieving from GHCR">

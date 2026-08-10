@@ -541,6 +541,67 @@ int oci_registry_fetch_manifest(const oci_reference_t *reference,
     return 1;
 }
 
+int oci_registry_fetch_manifest_optional(const oci_reference_t *reference,
+                                         char **json_out,
+                                         int *found_out,
+                                         char *error,
+                                         size_t error_size)
+{
+    char *url;
+    char suffix[1024];
+    url_fetch_header_t header;
+    url_fetch_request_t request;
+    url_fetch_response_t response;
+
+    *json_out = NULL;
+    *found_out = 0;
+    sprintf(suffix, "/manifests/%s", selector_string(reference));
+    url = build_url(reference, suffix);
+    if (url == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for manifest URL");
+        return 0;
+    }
+    header.name = "Accept";
+    header.value = ORAS_INDEX_MEDIA_TYPE;
+    memset(&request, 0, sizeof(request));
+    request.url = url;
+    request.method = "GET";
+    request.headers = &header;
+    request.header_count = 1;
+    if (!oci_registry_request(reference, &request, &response, error, error_size))
+    {
+        free(url);
+        return 0;
+    }
+    free(url);
+    if (response.status_code == 404)
+    {
+        oras_free_response(&response);
+        return 1;
+    }
+    if (response.status_code < 200 || response.status_code >= 300)
+    {
+        oras_set_error(error, error_size, "HTTP %d fetching referrers index", response.status_code);
+        oras_free_response(&response);
+        return 0;
+    }
+    if (!validate_json_response(&response, "referrers index", error, error_size))
+    {
+        oras_free_response(&response);
+        return 0;
+    }
+    *json_out = oras_strndup((const char *)response.body, response.body_size);
+    oras_free_response(&response);
+    if (*json_out == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for referrers index");
+        return 0;
+    }
+    *found_out = 1;
+    return 1;
+}
+
 int oci_registry_fetch_blob(const oci_reference_t *reference,
                             const char *digest,
                             unsigned char **data_out,
@@ -689,6 +750,17 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
                                char *error,
                                size_t error_size)
 {
+    return oci_registry_push_manifest_as(reference, manifest_json,
+                                         ORAS_MANIFEST_MEDIA_TYPE,
+                                         error, error_size);
+}
+
+int oci_registry_push_manifest_as(const oci_reference_t *reference,
+                                  const char *manifest_json,
+                                  const char *media_type,
+                                  char *error,
+                                  size_t error_size)
+{
     char suffix[1024];
     char *url;
     url_fetch_request_t request;
@@ -705,7 +777,7 @@ int oci_registry_push_manifest(const oci_reference_t *reference,
     }
     sprintf(length_text, "%u", (unsigned int)strlen(manifest_json));
     headers[0].name = "Content-Type";
-    headers[0].value = ORAS_MANIFEST_MEDIA_TYPE;
+    headers[0].value = (char *)media_type;
     headers[1].name = "Content-Length";
     headers[1].value = length_text;
     memset(&request, 0, sizeof(request));

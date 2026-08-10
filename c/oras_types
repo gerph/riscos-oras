@@ -159,6 +159,10 @@ void oras_free_manifest(oci_manifest_t *manifest)
         oras_free_descriptor(&manifest->manifests[i]);
     }
     free(manifest->manifests);
+    if (manifest->has_subject)
+    {
+        oras_free_descriptor(&manifest->subject);
+    }
     memset(manifest, 0, sizeof(*manifest));
 }
 

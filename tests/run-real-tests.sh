@@ -79,6 +79,19 @@ cmp "fixture-manifest.json" "stable-manifest.json"
 run_oras_text tags "localhost:$PORT/demo/pull" >"tags-after-tag.json"
 grep -qx 'stable' "tags-after-tag.json"
 
+echo "-- attach two files and retain both referrers"
+printf 'attachment one\n' >"attachment-one,fff"
+printf 'attachment two\n' >"attachment-two,fff"
+run_oras_text attach "localhost:$PORT/demo/pull:latest" "attachment-one,fff"
+run_oras_text attach "localhost:$PORT/demo/pull:latest" "attachment-two,fff"
+ref_tag=$(python3 - <<'PY'
+import hashlib
+print('sha256-' + hashlib.sha256(open('fixture-manifest.json', 'rb').read().rstrip(b'\n')).hexdigest() + '.referrers')
+PY
+)
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:$ref_tag" >"referrers.json"
+python3 -c 'import json; assert len(json.load(open("referrers.json"))["manifests"]) == 2'
+
 echo "-- pull fixture fileset"
 mkdir -p "pulled"
 run_oras pull "localhost:$PORT/demo/pull:latest" "pulled"

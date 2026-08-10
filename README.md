@@ -27,6 +27,7 @@ Run `*oras` with no arguments to display the command syntax.
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
 *oras tag <reference> <tag>...
+*oras attach <reference> <path>...
 *oras login <registry> <username>
 *oras logout <registry>
 ```
@@ -71,6 +72,10 @@ when the registry returns a normal tag list.
 source reference. It copies neither blobs nor files, and always creates tags
 in the source reference's own registry and repository. Tag arguments are tag
 names, not full OCI references.
+
+`attach` publishes the supplied files as a RISC OS fileset attachment to an
+existing manifest. Attachments are stored through the OCI referrers tag scheme;
+repeated attachments retain the earlier referrer descriptors.
 
 `login` prompts for the secret without echoing it, then replaces the matching
 `auths.<registry>.auth` entry. `logout` removes only that registry entry.
@@ -119,6 +124,12 @@ Give an existing manifest a release tag without reuploading its files:
 
 ```text
 *oras tag registry.example.net/charles/demo:1.0 stable release-1
+```
+
+Attach release notes to a published artifact:
+
+```text
+*oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff
 ```
 
 Log in before publishing to GHCR:
