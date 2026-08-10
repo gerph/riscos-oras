@@ -44,7 +44,7 @@ jobs:
       group: riscos-build-server
     outputs:
       version: ${{ steps.version.outputs.version }}
-      leafname: ${{ steps.version.outputs.leafname }}
+      leafname: ${{ steps.package.outputs.leafname }}
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -64,15 +64,21 @@ jobs:
           # Send the archive file to build service (timeout of 60 seconds)
           ./riscos-build-online -i /tmp/source-archive.zip -a off -t 60 -o /tmp/built
 
-      - name: Give the output a versioned name
+      - name: Derive version
         id: version
-        run: |
+        run: &derive_version |
           if [ -f VersionNum ] ; then
               version=$(sed -n 's/^#define Module_FullVersion[[:space:]]*"\([^"]*\)"/\1/p' VersionNum)
           else
               version=$(git rev-parse --short HEAD)
           fi
           echo "This is version: $version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Give the output a versioned name
+        id: package
+        run: |
+          version="${{ steps.version.outputs.version }}"
           leafname="$COMPONENT_NAME-$version.zip"
           if [ -f /tmp/built,a91 ] ; then
               cp /tmp/built,a91 "$leafname"
@@ -80,22 +86,25 @@ jobs:
               echo "No archive was built?"
               exit 1
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
           echo "leafname=$leafname" >> $GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@v7
         with:
           name: RISCOS-build
-          path: ${{ steps.version.outputs.leafname }}
+          path: ${{ steps.package.outputs.leafname }}
         # The artifact that is downloadable from the Actions is actually a zip of the artifacts
         # that we supply. So it will be a regular Zip file containing a RISC OS Zip file.
 
   build-docs:
     runs-on: ubuntu-latest
     outputs:
-      leafname: ${{ steps.version.outputs.leafname }}
+      leafname: ${{ steps.package.outputs.leafname }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Derive version
+        id: version
+        run: *derive_version
 
       - name: Build PRM-in-XML documentation
         uses: gerph/riscos-prminxml-action@v1
@@ -106,13 +115,9 @@ jobs:
           style: prm
 
       - name: Give the documentation a versioned name
-        id: version
+        id: package
         run: |
-          if [ -f VersionNum ] ; then
-              version=$(sed -n 's/^#define Module_FullVersion[[:space:]]*"\([^"]*\)"/\1/p' VersionNum)
-          else
-              version=$(git rev-parse --short HEAD)
-          fi
+          version="${{ steps.version.outputs.version }}"
           leafname="$COMPONENT_NAME-$version-documentation.zip"
           cd documentation && zip -q9r "../$leafname" .
           echo "leafname=$leafname" >> $GITHUB_OUTPUT
@@ -120,7 +125,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: Documentation
-          path: ${{ steps.version.outputs.leafname }}
+          path: ${{ steps.package.outputs.leafname }}
 
   # The release only triggers when the thing that was pushed was a tag starting with 'v'
   release:
