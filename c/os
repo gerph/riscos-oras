@@ -1,0 +1,371 @@
+/*******************************************************************
+ * File:        os
+ * Purpose:     OS interface veneers
+ * Author:      Gerph
+ * Date:        6 July 2025
+ ******************************************************************/
+
+#include <stdlib.h>
+#include <stdint.h>
+#include "swis.h"
+
+#include "os.h"
+
+#ifdef SIMPLE_APP
+/* Standalone builds have no module header to supply Err_Escape, so
+   define our own here */
+static _kernel_oserror _Err_Escape = { 17, "Escape" };
+_kernel_oserror *Err_Escape = &_Err_Escape;
+#else
+#include "modhead.h"
+#endif
+
+
+/*************************************************** Gerph *********
+ Function:      os_readvarval
+ Description:   Read a variable value
+ Parameters:    var-> the variable name to read
+                buf-> the buffer to write to
+                buflen = length of the buffer, or -1 to just read length
+                context = the context for the call, or 0 for first call
+                type = the variable type to read (3 to expand on return)
+                sizep-> where to store the size that was read
+                contextp-> where to store the context value
+                typep-> where to store the type
+ Returns:       error pointer, or NULL if ok
+ ******************************************************************/
+_kernel_oserror *os_readvarval(const char *var, char *buf, int buflen, uint32_t context, int type,
+                               uint32_t *contextp, int32_t *sizep, int32_t *typep)
+{
+    _kernel_oserror *err;
+    uintptr_t size = 0;
+    err = _swix(OS_ReadVarVal, _INR(0,4)|_OUTR(2, 4), var, buf, buflen, context, type, &size, &context, &type);
+    if (err)
+    {
+        if (err->errnum == ErrorNumber_VarCantFind)
+        {
+            /* End of enumeration */
+            size = 0;
+            type = -1;
+            context = 0;
+        }
+        else if (err->errnum != ErrorNumber_BuffOverflow)
+        {
+            /* Other error type */
+            size = 0;
+            type = -1;
+            context = 0;
+        }
+    }
+    if (typep != NULL)
+        *typep = type;
+    if (contextp != NULL)
+        *contextp = context;
+    if (sizep != NULL)
+        *sizep = size;
+    return err;
+}
+
+
+/*************************************************** Gerph *********
+ Function:      os_cli
+ Description:   Run a CLI command
+ Parameters:    cli-> the command line to run
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *oras_os_cli(const char *cli)
+{
+    _kernel_oserror *err;
+    err = _swix(OS_CLI, _IN(0), cli);
+    if (err)
+        return err;
+    return NULL;
+}
+
+
+/*************************************************** Gerph *********
+ Function:      escape_check
+ Description:   Check whether escape is pending
+ Parameters:    none
+ Returns:       true if pending, false if not
+ ******************************************************************/
+bool escape_check(void)
+{
+    _kernel_oserror *err;
+#ifdef __riscos64
+    uint32_t state = 0;
+    err = _swix(OS_ReadEscapeState, _OUT(0), &state);
+    if (state)
+        return true;
+#else
+    uint32_t flags = 0;
+    err = _swix(OS_ReadEscapeState, _OUT(_FLAGS), &flags);
+    if (flags & _C)
+        return true;
+#endif
+    return err ? true : false;
+}
+
+
+#define OSByte_AcknowledgeEscape 0x7E
+#define OSReadLine_PasswordFlag 0x40000000U
+#define OSReadLine_PasswordEcho '*'
+
+/*************************************************** Gerph *********
+ Function:      escape_acknowledge
+ Description:   Acknowledge the escape conditions
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
+void escape_acknowledge(void)
+{
+    _swix(OS_Byte, _IN(0), OSByte_AcknowledgeEscape);
+}
+
+
+#ifdef SIMPLE_APP
+#ifndef __riscos64
+/*************************************************** Gerph *********
+ Function:      os_generateerror
+ Description:   Raise an error to the environment
+ Parameters:    err -> the error to raise
+ Returns:       never
+ ******************************************************************/
+void os_generateerror(_kernel_oserror *err)
+{
+    _swi(OS_GenerateError, _IN(0), err);
+    /* if it returns, that's BAD */
+    os_exit();
+}
+#endif
+#endif
+
+/*************************************************** Gerph *********
+ Function:      os_exit
+ Description:   Exit the application
+ Parameters:    none
+ Returns:       never
+ ******************************************************************/
+void os_exit(void)
+{
+    _swi(OS_Exit, 0);
+    /* If we hit here, that's fatal */
+    while (1) {}
+}
+
+
+/*************************************************** Gerph *********
+ Function:      os_readline
+ Description:   Call OS_ReadLine for input
+ Parameters:    line-> line to read
+                len = max length including terminator
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_readline(char *line, int len)
+{
+    _kernel_oserror *err;
+    uint32_t read = 0;
+    uint32_t flags = 0;
+#ifdef __riscos64
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUTR(0, 1), line, len, 32, 128, 0, &flags, &read);
+    if (err)
+        return err;
+    if (flags)
+        goto escape;
+    line[read] = '\0';
+    return NULL;
+#else
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS), line, len, 32, 128, 0, &read, &flags);
+#ifndef ErrorNumber_ModuleBadSWI
+#define ErrorNumber_ModuleBadSWI          0x110
+#endif
+    if (err && err->errnum == ErrorNumber_ModuleBadSWI)
+    {
+        /* OS_ReadLine32 is not present on older systems; fall back to
+           the original 26-bit OS_ReadLine */
+        err = _swix(OS_ReadLine, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS), line, len, 32, 128, 0, &read, &flags);
+    }
+    if (err)
+        return err;
+    if (flags & _C)
+        goto escape;
+    line[read] = '\0';
+    return NULL;
+#endif
+
+escape:
+    return Err_Escape;
+}
+
+/*************************************************** Gerph *********
+ Function:      os_readline_secret
+ Description:   Read a line while output is disabled, restoring output and
+                moving to a fresh line afterwards
+ Parameters:    line-> line to read
+                len = max length including terminator
+ Returns:       pointer to error, or NULL if no error
+ ******************************************************************/
+_kernel_oserror *os_readline_secret(char *line, int len)
+{
+    _kernel_oserror *err;
+    uint32_t read = 0;
+    uint32_t flags = 0;
+    void *masked_line;
+
+    masked_line = (void *)((uintptr_t)line | OSReadLine_PasswordFlag);
+#ifdef __riscos64
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUTR(0, 1),
+                line, len, 32, 128,
+                OSReadLine_PasswordFlag | OSReadLine_PasswordEcho,
+                &flags, &read);
+    if (err != NULL) return err;
+    if (flags) return Err_Escape;
+#else
+    err = _swix(OS_ReadLine32, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS),
+                line, len, 32, 128,
+                OSReadLine_PasswordFlag | OSReadLine_PasswordEcho,
+                &read, &flags);
+#ifndef ErrorNumber_ModuleBadSWI
+#define ErrorNumber_ModuleBadSWI          0x110
+#endif
+    if (err != NULL && err->errnum == ErrorNumber_ModuleBadSWI)
+    {
+        err = _swix(OS_ReadLine, _INR(0, 4)|_OUT(1)|_OUT(_FLAGS),
+                    masked_line, len, 32, 128, OSReadLine_PasswordEcho,
+                    &read, &flags);
+    }
+    if (err != NULL) return err;
+    if (flags & _C) return Err_Escape;
+#endif
+    line[read] = '\0';
+    return NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_info
+ Description:   Read OS_File 5 catalogue information
+ Parameters:    path-> object to inspect
+                object_type-> optional returned object type
+                loadaddr-> optional returned load address
+                execaddr-> optional returned execution address
+                attrs-> optional returned attributes
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_info(const char *path, int *object_type, uint32_t *loadaddr,
+                      uint32_t *execaddr, uint32_t *attrs)
+{
+    _kernel_oserror *err;
+    int local_object_type;
+    uint32_t local_loadaddr;
+    uint32_t local_execaddr;
+    int ignored_length;
+    uint32_t local_attrs;
+    const char *ignored_name;
+
+    err = _swix(OS_File, _INR(0, 1)|_OUTR(0, 5), 5, path,
+                &local_object_type, &ignored_name, &local_loadaddr,
+                &local_execaddr, &ignored_length, &local_attrs);
+    if (err != NULL) return 0;
+    if (object_type != NULL) *object_type = local_object_type;
+    if (loadaddr != NULL) *loadaddr = local_loadaddr;
+    if (execaddr != NULL) *execaddr = local_execaddr;
+    if (attrs != NULL) *attrs = local_attrs;
+    return 1;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_set_info
+ Description:   Set OS_File 1 catalogue information
+ Parameters:    path-> object to update
+                loadaddr-> load address
+                execaddr-> execution address
+                attrs-> attributes
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_set_info(const char *path, uint32_t loadaddr, uint32_t execaddr,
+                          uint32_t attrs)
+{
+    return _swix(OS_File, _INR(0, 5), 1, path, loadaddr, execaddr, 0, attrs) == NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_set_type
+ Description:   Set an object's type with OS_File 18
+ Parameters:    path-> object to update
+                filetype-> new RISC OS filetype
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_set_type(const char *path, uint32_t filetype)
+{
+    return _swix(OS_File, _INR(0, 2), 18, path, filetype) == NULL;
+}
+
+/*************************************************** Gerph *********
+ Function:      oras_os_file_create_directory
+ Description:   Create one directory with OS_File 8
+ Parameters:    path-> directory to create
+ Returns:       1 on success, 0 on OS error
+ ******************************************************************/
+int oras_os_file_create_directory(const char *path)
+{
+    return _swix(OS_File, _INR(0, 1), 8, path) == NULL;
+}
+
+
+#ifdef __riscos64
+/* These SWI definitions are present in the RISC OS 64 header */
+#else
+/*************************************************** Gerph *********
+ Function:      os_writec
+ Description:   Write a character to output stream
+ Parameters:    s-> what to write
+                size = number to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_writec(char c)
+{
+    _kernel_oserror *err;
+    err = _swix(OS_WriteC, _IN(0), c);
+    return err;
+}
+
+/*************************************************** Gerph *********
+ Function:      os_writen
+ Description:   Write a number of characters to the output stream
+ Parameters:    s-> what to write
+                size = number to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_writen(const char *s, int size)
+{
+    _kernel_oserror *err;
+    err = _swix(OS_WriteN, _INR(0, 1), s, size);
+    return err;
+}
+
+/*************************************************** Gerph *********
+ Function:      os_write0
+ Description:   Write a 0-terminated string
+ Parameters:    s-> what to write
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_write0(const char *s)
+{
+    _kernel_oserror *err;
+    err = _swix(OS_Write0, _IN(0), s);
+    return err;
+}
+
+/*************************************************** Gerph *********
+ Function:      os_newline
+ Description:   Write a newline, whatever that means
+ Parameters:    none
+ Returns:       pointer to error, or NULL if ok.
+ ******************************************************************/
+_kernel_oserror *os_newline(void)
+{
+    _kernel_oserror *err;
+    err = _swix(OS_NewLine, 0);
+    return err;
+}
+#endif

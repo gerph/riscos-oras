@@ -8,21 +8,41 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cJSON/cJSON.h"
+
 #include "oras_types.h"
 #include "oci_manifest.h"
 #include "oci_registry.h"
+#include "oci_auth.h"
 #include "riscos_fileset.h"
 #include "selftest.h"
+#include "os.h"
 
 #include "VersionNum"
 
-static void write_output(const unsigned char *data, size_t size, const char *path)
+/*************************************************** Gerph *********
+ Function:      write_output
+ Description:   Write data to a file, or to stdout if no path given
+ Parameters:    data-> the bytes to write
+                size = number of bytes to write
+                path-> destination filename, or NULL for stdout
+                append_newline = append a newline when writing to stdout
+ Returns:       none (exits the process on failure to open the file)
+ ******************************************************************/
+static void write_output(const unsigned char *data,
+                         size_t size,
+                         const char *path,
+                         int append_newline)
 {
     FILE *fp;
 
     if (path == NULL)
     {
         fwrite(data, 1, size, stdout);
+        if (append_newline && (size == 0 || data[size - 1] != '\n'))
+        {
+            fputc('\n', stdout);
+        }
         return;
     }
     fp = fopen(path, "wb");
@@ -38,6 +58,46 @@ static void write_output(const unsigned char *data, size_t size, const char *pat
     fclose(fp);
 }
 
+/*************************************************** Gerph *********
+ Function:      format_json
+ Description:   Format a JSON document for human-readable output
+ Parameters:    json-> JSON document to format
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       allocated formatted JSON, or NULL on failure
+ ******************************************************************/
+static char *format_json(const char *json, char *error, size_t error_size)
+{
+    cJSON *root;
+    char *formatted;
+
+    root = cJSON_Parse(json);
+    if (root == NULL)
+    {
+        oras_set_error(error, error_size, "Registry returned malformed manifest JSON");
+        return NULL;
+    }
+    formatted = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (formatted == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for formatted manifest JSON");
+    }
+    return formatted;
+}
+
+/*************************************************** Gerph *********
+ Function:      pull_fetch_blob
+ Description:   Blob fetcher callback used to satisfy riscos_fileset_extract
+                by fetching a blob from the registry named by the reference
+ Parameters:    private_ref-> the oci_reference_t of the source registry
+                descriptor-> descriptor of the blob to fetch
+                data_out-> where to store the allocated blob data
+                size_out-> where to store the blob size
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if fetched ok, 0 on failure
+ ******************************************************************/
 static int pull_fetch_blob(void *private_ref,
                            const oci_descriptor_t *descriptor,
                            unsigned char **data_out,
@@ -56,18 +116,32 @@ static int pull_fetch_blob(void *private_ref,
                                    error_size);
 }
 
+/*************************************************** Gerph *********
+ Function:      print_usage
+ Description:   Print the command syntax summary to stdout
+ Parameters:    none
+ Returns:       none
+ ******************************************************************/
 static void print_usage(void)
 {
     printf("oras " Module_FullVersionAndDate "\n");
     printf("Syntax:\n");
     printf("  *oras pull <reference> [<directory>]\n");
-    printf("  *oras push <reference> <path>...\n");
-    printf("  *oras manifest fetch <reference> [<file>]\n");
+    printf("  *oras push [--source <uri|github:owner/repository>] <reference> <path>...\n");
+    printf("  *oras manifest fetch [--pretty] <reference> [<file>]\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
+    printf("  *oras login <registry> <username>\n");
+    printf("  *oras logout <registry>\n");
     printf("  *oras --self-test\n");
 }
 
+/*************************************************** Gerph *********
+ Function:      skip_space
+ Description:   Skip past leading whitespace in a string
+ Parameters:    text-> the string to scan
+ Returns:       pointer to the first non-whitespace character
+ ******************************************************************/
 static const char *skip_space(const char *text)
 {
     while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n')
@@ -77,6 +151,14 @@ static const char *skip_space(const char *text)
     return text;
 }
 
+/*************************************************** Gerph *********
+ Function:      find_tags_array
+ Description:   Locate the opening of the "tags" JSON array within a tags
+                listing response
+ Parameters:    json-> the JSON text to search
+ Returns:       pointer to the character after the array's opening '[',
+                or NULL if no "tags" array was found
+ ******************************************************************/
 static const char *find_tags_array(const char *json)
 {
     const char *scan;
@@ -100,6 +182,16 @@ static const char *find_tags_array(const char *json)
     return NULL;
 }
 
+/*************************************************** Gerph *********
+ Function:      print_tags_fast
+ Description:   Print each tag string in a tags listing response without
+                performing a full JSON parse; used as a lightweight path
+                for the common case of a simple flat "tags" array
+ Parameters:    json-> the JSON text to scan
+ Returns:       1 if the array was printed successfully, 0 if the text
+                did not match the expected simple form (caller should
+                fall back to printing the raw JSON)
+ ******************************************************************/
 static int print_tags_fast(const char *json)
 {
     const char *scan;
@@ -162,6 +254,13 @@ static int print_tags_fast(const char *json)
     }
 }
 
+/*************************************************** Gerph *********
+ Function:      print_tags
+ Description:   Print the tags from a tags listing response, falling back
+                to printing the raw JSON if the fast-path scan fails
+ Parameters:    json-> the JSON text to print
+ Returns:       none
+ ******************************************************************/
 static void print_tags(const char *json)
 {
     if (!print_tags_fast(json))
@@ -170,6 +269,66 @@ static void print_tags(const char *json)
     }
 }
 
+/*************************************************** Gerph *********
+ Function:      source_uri_from_option
+ Description:   Expand a source option, including the GitHub shorthand
+ Parameters:    option-> source URI or github:owner/repository shorthand
+                source_uri_out-> allocated URI result
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on invalid input or allocation failure
+ ******************************************************************/
+static int source_uri_from_option(const char *option,
+                                  char **source_uri_out,
+                                  char *error,
+                                  size_t error_size)
+{
+    const char *github_prefix;
+    const char *repository;
+
+    github_prefix = "github:";
+    *source_uri_out = NULL;
+    if (option[0] == '\0')
+    {
+        oras_set_error(error, error_size, "Source URI must not be empty");
+        return 0;
+    }
+    if (strncmp(option, github_prefix, strlen(github_prefix)) == 0)
+    {
+        repository = option + strlen(github_prefix);
+        if (repository[0] == '\0' || strchr(repository, '/') == NULL)
+        {
+            oras_set_error(error, error_size,
+                           "GitHub source must be github:<owner>/<repository>");
+            return 0;
+        }
+        *source_uri_out = malloc(strlen("https://github.com/") + strlen(repository) + 1);
+        if (*source_uri_out != NULL)
+        {
+            sprintf(*source_uri_out, "https://github.com/%s", repository);
+        }
+    }
+    else
+    {
+        *source_uri_out = oras_strdup(option);
+    }
+    if (*source_uri_out == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for source URI");
+        return 0;
+    }
+    return 1;
+}
+
+/*************************************************** Gerph *********
+ Function:      main
+ Description:   Entry point for the oras command line tool; dispatches to
+                the pull/push/manifest/blob/tags/self-test operations
+                according to the command line arguments
+ Parameters:    argc = number of command line arguments
+                argv-> array of argument strings
+ Returns:       does not return; exits with EXIT_SUCCESS or EXIT_FAILURE
+ ******************************************************************/
 int main(int argc, char *argv[])
 {
     char error[256];
@@ -183,18 +342,73 @@ int main(int argc, char *argv[])
         print_usage();
         exit(EXIT_FAILURE);
     }
+    if (strcmp(argv[1], "login") == 0 && argc == 4)
+    {
+        char secret[256];
+        _kernel_oserror *oserror;
+
+        printf("Secret for %s at %s: ", argv[3], argv[2]);
+        fflush(stdout);
+        oserror = os_readline_secret(secret, sizeof(secret));
+        if (oserror != NULL || !oci_auth_login(argv[2], argv[3], secret, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", oserror != NULL ? oserror->errmess : error);
+            exit(EXIT_FAILURE);
+        }
+        printf("Login stored for %s\n", argv[2]);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "logout") == 0 && argc == 3)
+    {
+        if (!oci_auth_logout(argv[2], error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        printf("Login removed for %s\n", argv[2]);
+        exit(EXIT_SUCCESS);
+    }
     if (strcmp(argv[1], "manifest") == 0 && argc >= 4 && strcmp(argv[2], "fetch") == 0)
     {
         oci_reference_t reference;
         char *json;
+        const char *reference_text;
+        const char *output_path;
+        int pretty;
 
-        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+        pretty = strcmp(argv[3], "--pretty") == 0;
+        if (pretty && argc < 5)
+        {
+            print_usage();
+            exit(EXIT_FAILURE);
+        }
+        reference_text = pretty ? argv[4] : argv[3];
+        output_path = pretty ? (argc >= 6 ? argv[5] : NULL) :
+                               (argc >= 5 ? argv[4] : NULL);
+        if (!oci_parse_reference(reference_text, &reference, error, sizeof(error)) ||
             !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)))
         {
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
-        write_output((const unsigned char *)json, strlen(json), argc >= 5 ? argv[4] : NULL);
+        if (pretty)
+        {
+            char *formatted;
+
+            formatted = format_json(json, error, sizeof(error));
+            free(json);
+            if (formatted == NULL)
+            {
+                fprintf(stderr, "%s\n", error);
+                oras_free_reference(&reference);
+                exit(EXIT_FAILURE);
+            }
+            json = formatted;
+        }
+        write_output((const unsigned char *)json,
+                     strlen(json),
+                     output_path,
+                     1);
         free(json);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);
@@ -211,7 +425,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
-        write_output(data, size, argc >= 6 ? argv[5] : NULL);
+        write_output(data, size, argc >= 6 ? argv[5] : NULL, 0);
         free(data);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);
@@ -239,7 +453,7 @@ int main(int argc, char *argv[])
         oci_manifest_t manifest;
         const char *directory;
 
-        directory = argc >= 4 ? argv[3] : ".";
+        directory = argc >= 4 ? argv[3] : "@";
         if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
             !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)) ||
             !oci_manifest_parse(json, &manifest, error, sizeof(error)))
@@ -297,17 +511,35 @@ int main(int argc, char *argv[])
         size_t entry_count;
         oci_manifest_t manifest;
         char *json;
+        char *source_uri;
+        int argument;
         int i;
 
-        if (!oci_parse_reference(argv[2], &reference, error, sizeof(error)) ||
-            !riscos_fileset_plan((const char *const *)&argv[3],
-                                 (size_t)(argc - 3),
+        argument = 2;
+        source_uri = NULL;
+        if (strcmp(argv[argument], "--source") == 0)
+        {
+            if (argc < 6 || !source_uri_from_option(argv[argument + 1],
+                                                     &source_uri,
+                                                     error,
+                                                     sizeof(error)))
+            {
+                fprintf(stderr, "%s\n", argc < 6 ? "Missing source, reference, or file" : error);
+                exit(EXIT_FAILURE);
+            }
+            argument += 2;
+        }
+        if (argc < argument + 2 ||
+            !oci_parse_reference(argv[argument], &reference, error, sizeof(error)) ||
+            !riscos_fileset_plan((const char *const *)&argv[argument + 1],
+                                 (size_t)(argc - argument - 1),
                                  &entries,
                                  &entry_count,
                                  error,
                                  sizeof(error)) ||
             !riscos_fileset_manifest_from_entries(entries,
                                                   entry_count,
+                                                  source_uri,
                                                   &manifest,
                                                   error,
                                                   sizeof(error)) ||
@@ -316,6 +548,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s\n", error);
             exit(EXIT_FAILURE);
         }
+        free(source_uri);
         for (i = 0; i < (int)entry_count; ++i)
         {
             FILE *fp;

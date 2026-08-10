@@ -8,12 +8,11 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "RISC_OSLib/os.h"
-
 #include "oras_types.h"
 #include "sha256.h"
 #include "riscos_metadata.h"
 #include "riscos_fileset.h"
+#include "os.h"
 
 static int append_entry(riscos_fileset_entry_t **entries,
                         size_t *entry_count,
@@ -21,9 +20,24 @@ static int append_entry(riscos_fileset_entry_t **entries,
                         const char *relative_path,
                         char *error,
                         size_t error_size);
-static int create_parent_directories(const char *path,
-                                     char *error,
-                                     size_t error_size);
+static int build_output_path(const char *directory,
+                             const char *safe_path,
+                             char *output_path,
+                             size_t output_path_size,
+                             char *error,
+                             size_t error_size);
+static int build_native_output_path(const char *directory,
+                                    const char *filename,
+                                    char *output_path,
+                                    size_t output_path_size,
+                                    char *error,
+                                    size_t error_size);
+static char *riscos_filename_to_oci_title(const char *filename);
+static int set_riscos_media_type(oci_descriptor_t *descriptor,
+                                 const char *filename,
+                                 const riscos_file_meta_t *meta,
+                                 char *error,
+                                 size_t error_size);
 static int path_object_type(const char *path);
 
 int riscos_fileset_sanitise_path(const char *path,
@@ -54,6 +68,8 @@ int riscos_fileset_sanitise_path(const char *path,
         {
             *next++ = '\0';
         }
+        /* Reject '.', '..' and empty segments so the path cannot escape
+           the destination directory via traversal */
         if (strcmp(walker, ".") == 0 || strcmp(walker, "..") == 0 || walker[0] == '\0')
         {
             free(copy);
@@ -66,6 +82,16 @@ int riscos_fileset_sanitise_path(const char *path,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      file_digest_and_size
+ Description:   Compute the SHA-256 digest and size of a file
+ Parameters:    path-> file to digest
+                digest_out-> where to store the allocated digest string
+                size_out-> where to store the file size
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 static int file_digest_and_size(const char *path,
                                 char **digest_out,
                                 size_t *size_out,
@@ -110,6 +136,18 @@ static int file_digest_and_size(const char *path,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      append_entry
+ Description:   Append a new fileset entry for a source file, recording
+                its digest, size and metadata
+ Parameters:    entries-> pointer to the entries array to grow
+                entry_count-> pointer to the entry count to update
+                source_path-> path of the file to add
+                relative_path-> path to record for the entry
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
 static int append_entry(riscos_fileset_entry_t **entries,
                         size_t *entry_count,
                         const char *source_path,
@@ -119,6 +157,7 @@ static int append_entry(riscos_fileset_entry_t **entries,
 {
     riscos_fileset_entry_t *grown;
     riscos_fileset_entry_t *entry;
+    char *title;
 
     grown = oras_reallocarray(*entries, *entry_count + 1, sizeof(**entries));
     if (grown == NULL)
@@ -147,9 +186,26 @@ static int append_entry(riscos_fileset_entry_t **entries,
     {
         return 0;
     }
+    title = riscos_filename_to_oci_title(relative_path);
+    if (title == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for fileset title");
+        return 0;
+    }
     if (!oras_set_annotation(&entry->descriptor.annotations,
                              &entry->descriptor.annotation_count,
                              ORAS_ANNOTATION_TITLE,
+                             title,
+                             error,
+                             error_size))
+    {
+        free(title);
+        return 0;
+    }
+    free(title);
+    if (!oras_set_annotation(&entry->descriptor.annotations,
+                             &entry->descriptor.annotation_count,
+                             ORAS_ANNOTATION_FILENAME,
                              relative_path,
                              error,
                              error_size))
@@ -157,6 +213,14 @@ static int append_entry(riscos_fileset_entry_t **entries,
         return 0;
     }
     if (!riscos_metadata_read(source_path, &entry->meta, error, error_size))
+    {
+        return 0;
+    }
+    if (!set_riscos_media_type(&entry->descriptor,
+                               relative_path,
+                               &entry->meta,
+                               error,
+                               error_size))
     {
         return 0;
     }
@@ -172,6 +236,15 @@ static int append_entry(riscos_fileset_entry_t **entries,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      has_duplicate_relative_path
+ Description:   Check whether a relative path is already used by an
+                existing entry
+ Parameters:    entries-> array of entries to search
+                entry_count = number of entries in the array
+                path-> relative path to look for
+ Returns:       1 if found, 0 if not
+ ******************************************************************/
 static int has_duplicate_relative_path(const riscos_fileset_entry_t *entries,
                                        size_t entry_count,
                                        const char *path)
@@ -188,18 +261,22 @@ static int has_duplicate_relative_path(const riscos_fileset_entry_t *entries,
     return 0;
 }
 
+/*************************************************** Gerph *********
+ Function:      path_object_type
+ Description:   Determine the filing system object type of a path
+ Parameters:    path-> path to examine
+ Returns:       object type (0 = not found, 1 = file, 2 = directory), as
+                returned by OS_File action 5
+ ******************************************************************/
 static int path_object_type(const char *path)
 {
-    os_filestr info;
+    int object_type;
 
-    memset(&info, 0, sizeof(info));
-    info.action = 5;
-    info.name = (char *)path;
-    if (os_file(&info) != NULL)
+    if (!oras_os_file_info(path, &object_type, NULL, NULL, NULL))
     {
         return 0;
     }
-    return info.action;
+    return object_type;
 }
 
 int riscos_fileset_plan(const char *const *paths,
@@ -219,7 +296,7 @@ int riscos_fileset_plan(const char *const *paths,
     entry_count = 0;
     for (i = 0; i < path_count; ++i)
     {
-        leaf = strrchr(paths[i], '/');
+        leaf = strrchr(paths[i], '.');
         leaf = leaf == NULL ? paths[i] : leaf + 1;
         if (path_object_type(paths[i]) == 2)
         {
@@ -235,8 +312,14 @@ int riscos_fileset_plan(const char *const *paths,
             riscos_fileset_free_entries(entries, entry_count);
             return 0;
         }
-        if (has_duplicate_relative_path(entries, entry_count, sanitised) ||
-            !append_entry(&entries, &entry_count, paths[i], sanitised, error, error_size))
+        if (has_duplicate_relative_path(entries, entry_count, sanitised))
+        {
+            oras_set_error(error, error_size, "Duplicate input leaf name '%s'", sanitised);
+            free(sanitised);
+            riscos_fileset_free_entries(entries, entry_count);
+            return 0;
+        }
+        if (!append_entry(&entries, &entry_count, paths[i], sanitised, error, error_size))
         {
             free(sanitised);
             riscos_fileset_free_entries(entries, entry_count);
@@ -265,6 +348,7 @@ void riscos_fileset_free_entries(riscos_fileset_entry_t *entries,
 
 int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                                          size_t entry_count,
+                                         const char *source_uri,
                                          oci_manifest_t *manifest,
                                          char *error,
                                          size_t error_size)
@@ -286,6 +370,17 @@ int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
                              &manifest->annotation_count,
                              ORAS_ANNOTATION_FORMAT,
                              ORAS_FILES_FORMAT,
+                             error,
+                             error_size))
+    {
+        oras_free_manifest(manifest);
+        return 0;
+    }
+    if (source_uri != NULL &&
+        !oras_set_annotation(&manifest->annotations,
+                             &manifest->annotation_count,
+                             ORAS_ANNOTATION_SOURCE,
+                             source_uri,
                              error,
                              error_size))
     {
@@ -327,40 +422,181 @@ int riscos_fileset_manifest_from_entries(const riscos_fileset_entry_t *entries,
     return 1;
 }
 
-static int create_parent_directories(const char *path,
-                                     char *error,
-                                     size_t error_size)
+/*************************************************** Gerph *********
+ Function:      build_output_path
+ Description:   Convert an OCI output path to a RISC OS path and create
+                its missing parent directories
+ Parameters:    directory-> destination directory in RISC OS notation
+                safe_path-> validated OCI-relative path
+                output_path-> buffer for resulting RISC OS path
+                output_path_size = size of output_path
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
+static int build_output_path(const char *directory,
+                             const char *safe_path,
+                             char *output_path,
+                             size_t output_path_size,
+                             char *error,
+                             size_t error_size)
 {
-    char *copy;
-    char *slash;
-    os_filestr info;
+    const char *component;
+    const char *slash;
+    size_t output_length;
+    size_t component_length;
 
-    copy = oras_strdup(path);
-    if (copy == NULL)
+    if (directory[0] == '\0' || strlen(directory) >= output_path_size)
     {
-        oras_set_error(error, error_size, "No memory for directory creation");
+        oras_set_error(error, error_size, "Invalid destination directory '%s'", directory);
         return 0;
     }
-    slash = strchr(copy, '/');
-    while (slash != NULL)
+    strcpy(output_path, directory);
+    output_length = strlen(output_path);
+    component = safe_path;
+    while (component != NULL)
     {
-        *slash = '\0';
-        if (copy[0] != '\0' && path_object_type(copy) == 0)
+        slash = strchr(component, '/');
+        component_length = slash == NULL ? strlen(component) :
+                                            (size_t)(slash - component);
+        if (output_length + 1 + component_length >= output_path_size)
         {
-            memset(&info, 0, sizeof(info));
-            info.action = 8;
-            info.name = copy;
-            if (os_file(&info) != NULL)
-            {
-                free(copy);
-                oras_set_error(error, error_size, "Unable to create directory '%s'", copy);
-                return 0;
-            }
+            oras_set_error(error, error_size, "Output path is too long");
+            return 0;
         }
-        *slash = '/';
-        slash = strchr(slash + 1, '/');
+        output_path[output_length++] = '.';
+        memcpy(output_path + output_length, component, component_length);
+        output_length += component_length;
+        output_path[output_length] = '\0';
+        if (slash != NULL && path_object_type(output_path) == 0 &&
+            !oras_os_file_create_directory(output_path))
+        {
+            oras_set_error(error, error_size, "Unable to create directory '%s'", output_path);
+            return 0;
+        }
+        component = slash == NULL ? NULL : slash + 1;
     }
-    free(copy);
+    return 1;
+}
+
+/*************************************************** Gerph *********
+ Function:      build_native_output_path
+ Description:   Append a native RISC OS filename to a destination directory
+ Parameters:    directory-> destination directory in RISC OS notation
+                filename-> native RISC OS leaf filename
+                output_path-> buffer for resulting RISC OS path
+                output_path_size = size of output_path
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
+static int build_native_output_path(const char *directory,
+                                    const char *filename,
+                                    char *output_path,
+                                    size_t output_path_size,
+                                    char *error,
+                                    size_t error_size)
+{
+    size_t directory_length;
+    size_t filename_length;
+
+    directory_length = strlen(directory);
+    filename_length = strlen(filename);
+    if (directory_length == 0 || filename_length == 0 ||
+        strchr(filename, '.') != NULL || strchr(filename, ':') != NULL ||
+        strchr(filename, '^') != NULL || filename[0] == '$' ||
+        filename[0] == '@' || filename[0] == '\\' ||
+        directory_length + 1 + filename_length >= output_path_size)
+    {
+        oras_set_error(error, error_size, "Unsafe RISC OS filename '%s'", filename);
+        return 0;
+    }
+    strcpy(output_path, directory);
+    strcat(output_path, ".");
+    strcat(output_path, filename);
+    return 1;
+}
+
+/*************************************************** Gerph *********
+ Function:      riscos_filename_to_oci_title
+ Description:   Convert a native RISC OS leaf filename to a portable OCI title
+ Parameters:    filename-> native RISC OS leaf filename
+ Returns:       allocated OCI title, or NULL if allocation fails
+ ******************************************************************/
+static char *riscos_filename_to_oci_title(const char *filename)
+{
+    char *title;
+    char *cursor;
+
+    title = oras_strdup(filename);
+    if (title == NULL)
+    {
+        return NULL;
+    }
+    for (cursor = title; *cursor != '\0'; ++cursor)
+    {
+        if (*cursor == '/')
+        {
+            *cursor = '.';
+        }
+    }
+    return title;
+}
+
+/*************************************************** Gerph *********
+ Function:      set_riscos_media_type
+ Description:   Set application/riscos MIME parameters from file metadata
+ Parameters:    descriptor-> descriptor whose media type is updated
+                filename-> native RISC OS leaf filename
+                meta-> RISC OS metadata to encode
+                error-> buffer for error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
+static int set_riscos_media_type(oci_descriptor_t *descriptor,
+                                 const char *filename,
+                                 const riscos_file_meta_t *meta,
+                                 char *error,
+                                 size_t error_size)
+{
+    size_t filename_length;
+    size_t name_length;
+    char *media_type;
+
+    filename_length = strlen(filename);
+    name_length = filename_length;
+    if (filename_length >= 4 && filename[filename_length - 4] == ',')
+    {
+        name_length -= 4;
+    }
+    media_type = malloc(filename_length + 128);
+    if (media_type == NULL)
+    {
+        oras_set_error(error, error_size, "No memory for RISC OS media type");
+        return 0;
+    }
+    strcpy(media_type, ORAS_DESCRIPTOR_MEDIA_TYPE "; name=\"");
+    strncat(media_type, filename, name_length);
+    if (meta->has_filetype)
+    {
+        sprintf(media_type + strlen(media_type), ",%03X\"", meta->filetype);
+    }
+    else
+    {
+        strcat(media_type, "\"");
+    }
+    if (meta->has_loadexec)
+    {
+        sprintf(media_type + strlen(media_type), "; load=&%08lX; exec=&%08lX",
+                (unsigned long)meta->loadaddr, (unsigned long)meta->execaddr);
+    }
+    if (meta->has_attrs)
+    {
+        sprintf(media_type + strlen(media_type), "; access=&%02lX",
+                ((unsigned long)meta->attrs % 256UL));
+    }
+    free(descriptor->media_type);
+    descriptor->media_type = media_type;
     return 1;
 }
 
@@ -377,6 +613,7 @@ int riscos_fileset_extract(const oci_manifest_t *manifest,
     for (i = 0; i < manifest->layer_count; ++i)
     {
         const char *title;
+        const char *native_filename;
         char *safe_path;
         char output_path[1024];
         riscos_file_meta_t meta;
@@ -410,8 +647,23 @@ int riscos_fileset_extract(const oci_manifest_t *manifest,
                 return 0;
             }
         }
-        sprintf(output_path, "%s/%s", directory, safe_path);
-        if (!create_parent_directories(output_path, error, error_size))
+        native_filename = oras_find_annotation(manifest->layers[i].annotations,
+                                                manifest->layers[i].annotation_count,
+                                                ORAS_ANNOTATION_FILENAME);
+        if ((native_filename != NULL &&
+             !build_native_output_path(directory,
+                                       native_filename,
+                                       output_path,
+                                       sizeof(output_path),
+                                       error,
+                                       error_size)) ||
+            (native_filename == NULL &&
+             !build_output_path(directory,
+                                safe_path,
+                                output_path,
+                                sizeof(output_path),
+                                error,
+                                error_size)))
         {
             free(safe_path);
             return 0;

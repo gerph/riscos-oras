@@ -9,18 +9,59 @@
 
 #include "oras_types.h"
 
+/*************************************************** Gerph *********
+ Function:      oci_parse_reference
+ Description:   Parse an OCI image reference into its components
+ Parameters:    text-> the reference text to parse
+                reference-> where to store the parsed reference
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if parsed ok, 0 on error
+ ******************************************************************/
 int oci_parse_reference(const char *text,
                         oci_reference_t *reference,
                         char *error,
                         size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_manifest_parse
+ Description:   Parse an OCI manifest or index from JSON text
+ Parameters:    json-> the JSON text to parse
+                manifest-> where to store the parsed manifest
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if parsed ok, 0 on error
+ ******************************************************************/
 int oci_manifest_parse(const char *json,
                        oci_manifest_t *manifest,
                        char *error,
                        size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_manifest_write
+ Description:   Serialise an OCI manifest to JSON text
+ Parameters:    manifest-> the manifest to serialise
+                json_out-> where to store the allocated JSON text
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if written ok, 0 on error
+ ******************************************************************/
 int oci_manifest_write(const oci_manifest_t *manifest,
                        char **json_out,
                        char *error,
                        size_t error_size);
+
+/*************************************************** Gerph *********
+ Function:      oci_manifest_select
+ Description:   Select a descriptor from an image index by digest or platform
+ Parameters:    manifest-> the index to select from
+                platform-> the os/arch selector, or NULL to not select by platform
+                manifest_digest-> the digest to select, or NULL to not select by digest
+                selected-> where to store the selected descriptor
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if a descriptor was selected, 0 on error
+ ******************************************************************/
 int oci_manifest_select(oci_manifest_t *manifest,
                         const char *platform,
                         const char *manifest_digest,

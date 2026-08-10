@@ -12,6 +12,15 @@
 #include "oras_types.h"
 #include "oci_manifest.h"
 
+/*************************************************** Gerph *********
+ Function:      parse_descriptor
+ Description:   Parse a single OCI descriptor object from JSON
+ Parameters:    item-> the cJSON descriptor object to parse
+                descriptor-> where to store the parsed descriptor
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if parsed ok, 0 on error
+ ******************************************************************/
 static int parse_descriptor(const cJSON *item,
                             oci_descriptor_t *descriptor,
                             char *error,
@@ -84,6 +93,12 @@ static int parse_descriptor(const cJSON *item,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      descriptor_to_json
+ Description:   Build a cJSON descriptor object from a descriptor
+ Parameters:    descriptor-> the descriptor to convert
+ Returns:       pointer to new cJSON object, or NULL if no memory
+ ******************************************************************/
 static cJSON *descriptor_to_json(const oci_descriptor_t *descriptor)
 {
     cJSON *item;
@@ -160,6 +175,9 @@ int oci_parse_reference(const char *text,
     {
         tag_sep = strrchr(slash + 1, ':');
         reference->registry = oras_strndup(text, host_end - text);
+        /* A ':' only introduces a tag if nothing after it looks like the
+           start of a further path segment; otherwise it is part of the
+           repository path (e.g. a port-like component) */
         if (tag_sep != NULL && strchr(tag_sep + 1, '/') == NULL)
         {
             reference->repository = oras_strndup(slash + 1, tag_sep - (slash + 1));
@@ -179,6 +197,8 @@ int oci_parse_reference(const char *text,
         oras_set_error(error, error_size, "No memory for reference");
         return 0;
     }
+    /* Docker Hub is addressed by a different host name to the one used
+       in references; map it to the real registry endpoint */
     if (strcmp(reference->registry, "docker.io") == 0 ||
         strcmp(reference->registry, "index.docker.io") == 0)
     {
@@ -396,6 +416,9 @@ int oci_manifest_select(oci_manifest_t *manifest,
         {
             if (strcmp(manifest->manifests[i].digest, manifest_digest) == 0)
             {
+                /* Transfer ownership of the descriptor's allocations to
+                   the caller, and zero the slot so the later manifest
+                   free does not release them a second time */
                 *selected = manifest->manifests[i];
                 memset(&manifest->manifests[i], 0, sizeof(manifest->manifests[i]));
                 return 1;

@@ -19,11 +19,42 @@ typedef struct sha256_context_s
     size_t block_used;
 } sha256_context_t;
 
+/*************************************************** Gerph *********
+ Function:      sha256_init
+ Description:   Initialise a SHA-256 context ready for hashing
+ Parameters:    context-> the context to initialise
+ Returns:       none
+ ******************************************************************/
 void sha256_init(sha256_context_t *context);
+
+/*************************************************** Gerph *********
+ Function:      sha256_update
+ Description:   Add data to a SHA-256 digest in progress
+ Parameters:    context-> the context to update
+                data-> the data to add to the digest
+                length = number of bytes of data
+ Returns:       none
+ ******************************************************************/
 void sha256_update(sha256_context_t *context,
                    const unsigned char *data,
                    size_t length);
+
+/*************************************************** Gerph *********
+ Function:      sha256_final
+ Description:   Complete a SHA-256 digest and retrieve the result
+ Parameters:    context-> the context to finalise
+                digest-> where to store the 32-byte digest
+ Returns:       none
+ ******************************************************************/
 void sha256_final(sha256_context_t *context, unsigned char digest[32]);
+
+/*************************************************** Gerph *********
+ Function:      sha256_to_hex
+ Description:   Convert a SHA-256 digest to a lower-case hex string
+ Parameters:    digest-> the 32-byte digest to convert
+                output-> where to store the 65-byte (64 chars + NUL) hex string
+ Returns:       none
+ ******************************************************************/
 void sha256_to_hex(const unsigned char digest[32], char output[65]);
 
 #endif

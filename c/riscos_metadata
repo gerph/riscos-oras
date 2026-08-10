@@ -8,14 +8,22 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "RISC_OSLib/os.h"
-
 #include "oras_types.h"
 #include "riscos_metadata.h"
+#include "os.h"
 
 #define RISCOS_TYPED_LOAD_PREFIX 0xFFF00000U
-#define RISCOS_SWI_OS_FILE 0x00000008
 
+/*************************************************** Gerph *********
+ Function:      parse_hex_field
+ Description:   Parse a fixed-width hex field from an annotation value
+ Parameters:    text-> the text to parse
+                digits = the exact number of hex digits expected
+                value_out-> where to store the parsed value
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed (error is filled in)
+ ******************************************************************/
 static int parse_hex_field(const char *text,
                            size_t digits,
                            uint32_t *value_out,
@@ -58,6 +66,13 @@ static int parse_hex_field(const char *text,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      metadata_from_filename
+ Description:   Derive a filetype from a ",xyz" filename suffix
+ Parameters:    path-> the filename to examine
+                meta-> the metadata to update if a filetype is found
+ Returns:       none
+ ******************************************************************/
 static void metadata_from_filename(const char *path, riscos_file_meta_t *meta)
 {
     const char *comma;
@@ -68,6 +83,8 @@ static void metadata_from_filename(const char *path, riscos_file_meta_t *meta)
     {
         if (sscanf(comma + 1, "%x", &value) == 1)
         {
+            /* RISC OS convention: a trailing ",xyz" suffix encodes the
+               12-bit filetype in hex */
             meta->has_filetype = true;
             meta->filetype = value & 0xFFFU;
         }
@@ -79,34 +96,34 @@ int riscos_metadata_read(const char *path,
                          char *error,
                          size_t error_size)
 {
-    os_filestr info;
-    os_error *oserr;
+    int object_type;
+    uint32_t loadaddr;
+    uint32_t execaddr;
+    uint32_t attrs;
 
     memset(meta, 0, sizeof(*meta));
-    memset(&info, 0, sizeof(info));
-    info.action = 5;
-    info.name = (char *)path;
-    oserr = os_file(&info);
-    if (oserr != NULL)
+    if (!oras_os_file_info(path, &object_type, &loadaddr, &execaddr, &attrs))
     {
         metadata_from_filename(path, meta);
         if (!meta->has_filetype)
         {
             oras_set_error(error, error_size, "Unable to read metadata for '%s': %s",
-                           path, oserr->errmess);
+                           path, "OS_File failed");
             return 0;
         }
         return 1;
     }
     meta->has_loadexec = true;
-    meta->loadaddr = (uint32_t)info.loadaddr;
-    meta->execaddr = (uint32_t)info.execaddr;
+    meta->loadaddr = loadaddr;
+    meta->execaddr = execaddr;
     meta->has_attrs = true;
-    meta->attrs = (uint32_t)info.end;
-    if (((uint32_t)info.loadaddr & 0xFFF00000U) == RISCOS_TYPED_LOAD_PREFIX)
+    meta->attrs = attrs;
+    if ((loadaddr & 0xFFF00000U) == RISCOS_TYPED_LOAD_PREFIX)
     {
+        /* Top 12 bits of load address are 0xFFF for a "typed" file; the
+           filetype itself is held in bits 8-19 */
         meta->has_filetype = true;
-        meta->filetype = ((uint32_t)info.loadaddr >> 8) & 0xFFFU;
+        meta->filetype = (loadaddr >> 8) & 0xFFFU;
     }
     else
     {
@@ -120,37 +137,22 @@ int riscos_metadata_apply(const char *path,
                           char *error,
                           size_t error_size)
 {
-    os_error *oserr;
-    os_filestr info;
-    os_regset regs;
-
     if (meta->has_loadexec)
     {
-        memset(&info, 0, sizeof(info));
-        info.action = 1;
-        info.name = (char *)path;
-        info.loadaddr = (int)meta->loadaddr;
-        info.execaddr = (int)meta->execaddr;
-        info.end = meta->has_attrs ? (int)meta->attrs : 0;
-        oserr = os_file(&info);
-        if (oserr != NULL)
+        if (!oras_os_file_set_info(path, meta->loadaddr, meta->execaddr,
+                                   meta->has_attrs ? meta->attrs : 0))
         {
             oras_set_error(error, error_size, "Unable to apply load/exec to '%s': %s",
-                           path, oserr->errmess);
+                           path, "OS_File failed");
             return 0;
         }
     }
     else if (meta->has_filetype)
     {
-        memset(&regs, 0, sizeof(regs));
-        regs.r[0] = 18;
-        regs.r[1] = (int)path;
-        regs.r[2] = (int)meta->filetype;
-        oserr = os_swix(RISCOS_SWI_OS_FILE | os_X, &regs);
-        if (oserr != NULL)
+        if (!oras_os_file_set_type(path, meta->filetype))
         {
             oras_set_error(error, error_size, "Unable to apply filetype to '%s': %s",
-                           path, oserr->errmess);
+                           path, "OS_File failed");
             return 0;
         }
     }

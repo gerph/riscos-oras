@@ -8,12 +8,19 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "RISC_OSLib/os.h"
+#include "kernel.h"
+#include "swis.h"
 #include "URL/URLFetcher.h"
 
 #include "oras_types.h"
 #include "url_fetch.h"
 
+/*************************************************** Gerph *********
+ Function:      method_number
+ Description:   Map an HTTP method name to a URL_Fetcher method number
+ Parameters:    method-> the method name to look up
+ Returns:       URL_Fetcher method number, or 0 if unrecognised
+ ******************************************************************/
 static int method_number(const char *method)
 {
     if (strcmp(method, "GET") == 0)
@@ -39,6 +46,18 @@ static int method_number(const char *method)
     return 0;
 }
 
+/*************************************************** Gerph *********
+ Function:      append_bytes
+ Description:   Append data to a growable buffer, expanding it as needed
+ Parameters:    buffer-> pointer to the buffer pointer, grown as required
+                used-> pointer to the count of bytes currently used
+                allocated-> pointer to the count of bytes currently allocated
+                data-> the bytes to append
+                length = number of bytes to append
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed
+ ******************************************************************/
 static int append_bytes(unsigned char **buffer,
                         size_t *used,
                         size_t *allocated,
@@ -71,6 +90,15 @@ static int append_bytes(unsigned char **buffer,
     return 1;
 }
 
+/*************************************************** Gerph *********
+ Function:      build_request_block
+ Description:   Build the combined header and body block for URL_GetURL
+ Parameters:    request-> the request whose headers and body are encoded
+                length_out-> where to store the length of the built block
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       pointer to the allocated block, or NULL if failed
+ ******************************************************************/
 static char *build_request_block(const url_fetch_request_t *request,
                                  size_t *length_out,
                                  char *error,
@@ -111,6 +139,16 @@ static char *build_request_block(const url_fetch_request_t *request,
     return block;
 }
 
+/*************************************************** Gerph *********
+ Function:      parse_response_headers
+ Description:   Split a raw HTTP response into status, headers and body
+ Parameters:    raw-> the raw HTTP response data
+                raw_size = size of the raw response data
+                response-> structure to fill in with status, headers and body
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 if successful, 0 if failed
+ ******************************************************************/
 static int parse_response_headers(const unsigned char *raw,
                                   size_t raw_size,
                                   url_fetch_response_t *response,
@@ -125,6 +163,8 @@ static int parse_response_headers(const unsigned char *raw,
     char *next;
 
     header_end = 0;
+    /* Find the blank line that separates the headers from the body; accept
+       either a bare LF-LF or a full CRLF-CRLF terminator */
     while (header_end + 3 < raw_size)
     {
         if ((raw[header_end] == '\r' && raw[header_end + 1] == '\n' &&
@@ -140,6 +180,7 @@ static int parse_response_headers(const unsigned char *raw,
         oras_set_error(error, error_size, "HTTP response missing header terminator");
         return 0;
     }
+    /* Skip past whichever terminator was matched: 2 bytes for LF-LF, 4 for CRLF-CRLF */
     body = raw + header_end + ((raw[header_end] == '\n') ? 2 : 4);
     body_size = raw_size - (size_t)(body - raw);
     response->body = malloc(body_size == 0 ? 1 : body_size);
@@ -205,8 +246,7 @@ int url_fetch_execute(const url_fetch_request_t *request,
                       char *error,
                       size_t error_size)
 {
-    os_error *oserr;
-    os_regset regs;
+    _kernel_oserror *oserr;
     int session;
     int flags;
     int method;
@@ -218,6 +258,10 @@ int url_fetch_execute(const url_fetch_request_t *request,
     char *request_block;
     size_t request_block_length;
     int bytes_remaining;
+    int bytes_read;
+    int unused_register1;
+    int unused_register2;
+    int unused_register3;
 
     memset(response, 0, sizeof(*response));
     method = method_number(request->method);
@@ -226,30 +270,21 @@ int url_fetch_execute(const url_fetch_request_t *request,
         oras_set_error(error, error_size, "Unsupported HTTP method '%s'", request->method);
         return 0;
     }
-    memset(&regs, 0, sizeof(regs));
-    regs.r[0] = 0;
-    oserr = os_swix(URL_Register | os_X, &regs);
+    oserr = _swix(URL_Register, _IN(0)|_OUT(1), 0, &session);
     if (oserr != NULL)
     {
         oras_set_error(error, error_size, "URL_Register failed: %s", oserr->errmess);
         return 0;
     }
-    session = regs.r[1];
     request_block = build_request_block(request, &request_block_length, error, error_size);
     if (request_block == NULL)
     {
         goto fail;
     }
     flags = request->header_count != 0 || request->body_size != 0 ? URL_GetURL_DataLengthGiven : 0;
-    memset(&regs, 0, sizeof(regs));
-    regs.r[0] = flags;
-    regs.r[1] = session;
-    regs.r[2] = method;
-    regs.r[3] = (int)request->url;
-    regs.r[4] = flags != 0 ? (int)request_block : 0;
-    regs.r[5] = flags != 0 ? (int)request_block_length : 2;
-    regs.r[6] = 0;
-    oserr = os_swix(URL_GetURL | os_X, &regs);
+    oserr = _swix(URL_GetURL, _INR(0, 6), flags, session, method,
+                  request->url, flags != 0 ? request_block : NULL,
+                  flags != 0 ? request_block_length : 2, 0);
     free(request_block);
     if (oserr != NULL)
     {
@@ -262,62 +297,55 @@ int url_fetch_execute(const url_fetch_request_t *request,
     raw_allocated = 0;
     status = 0;
     bytes_remaining = -1;
+    /* Poll URL_ReadData until the fetch is complete and every byte has been
+       drained: the module may report completion before all the data has
+       actually been collected, so we must keep reading while bytes remain */
     do
     {
-        memset(&regs, 0, sizeof(regs));
-        regs.r[0] = 0;
-        regs.r[1] = session;
-        regs.r[2] = (int)chunk;
-        regs.r[3] = sizeof(chunk);
-        oserr = os_swix(URL_ReadData | os_X, &regs);
+        oserr = _swix(URL_ReadData, _INR(0, 3)|_OUTR(0, 5),
+                      0, session, chunk, sizeof(chunk), &status,
+                      &unused_register1, &unused_register2, &unused_register3,
+                      &bytes_read, &bytes_remaining);
         if (oserr != NULL)
         {
             oras_set_error(error, error_size, "URL_ReadData failed: %s", oserr->errmess);
             free(raw);
             goto fail;
         }
-        status = (unsigned long)regs.r[0];
-        bytes_remaining = regs.r[5];
-        if (regs.r[4] > 0)
+        if (bytes_read > 0)
         {
             if (!append_bytes(&raw, &raw_used, &raw_allocated,
-                              chunk, (size_t)regs.r[4], error, error_size))
+                              chunk, (size_t)bytes_read, error, error_size))
             {
                 free(raw);
                 goto fail;
             }
         }
-        if ((status & URL_Status_Complete) == 0 && regs.r[4] == 0)
+        if ((status & URL_Status_Complete) == 0 && bytes_read == 0)
         {
-            os_swi1(0x0000016B, 1);
+            /* Nothing ready yet: yield briefly so the URL_Fetcher module's
+               background transport can make progress before we ask again */
+            _swi(0x0000016B, _IN(0), 1);
         }
     } while ((status & URL_Status_Complete) == 0 ||
-             regs.r[4] > 0 ||
+             bytes_read > 0 ||
              bytes_remaining > 0);
 
-    memset(&regs, 0, sizeof(regs));
-    regs.r[0] = 0;
-    regs.r[1] = session;
-    os_swix(URL_Deregister | os_X, &regs);
+    _swix(URL_Deregister, _INR(0, 1), 0, session);
 
-    if (status & URL_Status_Aborted)
-    {
-        free(raw);
-        oras_set_error(error, error_size, "HTTP transfer aborted");
-        return 0;
-    }
     if (!parse_response_headers(raw, raw_used, response, error, error_size))
     {
         free(raw);
+        if (status & URL_Status_Aborted)
+        {
+            oras_set_error(error, error_size, "HTTP transfer aborted");
+        }
         return 0;
     }
     free(raw);
     return 1;
 
 fail:
-    memset(&regs, 0, sizeof(regs));
-    regs.r[0] = 0;
-    regs.r[1] = session;
-    os_swix(URL_Deregister | os_X, &regs);
+    _swix(URL_Deregister, _INR(0, 1), 0, session);
     return 0;
 }

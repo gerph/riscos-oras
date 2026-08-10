@@ -14,15 +14,17 @@
 #define ORAS_ARTIFACT_TYPE "application/vnd.riscos.fileset.v1"
 #define ORAS_MANIFEST_MEDIA_TYPE "application/vnd.oci.image.manifest.v1+json"
 #define ORAS_INDEX_MEDIA_TYPE "application/vnd.oci.image.index.v1+json"
-#define ORAS_DESCRIPTOR_MEDIA_TYPE "application/octet-stream"
+#define ORAS_DESCRIPTOR_MEDIA_TYPE "application/riscos"
 #define ORAS_FILES_FORMAT "fileset-v1"
 
 #define ORAS_ANNOTATION_TITLE "org.opencontainers.image.title"
+#define ORAS_ANNOTATION_FILENAME "org.riscos.filename"
 #define ORAS_ANNOTATION_FILETYPE "org.riscos.filetype"
 #define ORAS_ANNOTATION_LOADADDR "org.riscos.loadaddr"
 #define ORAS_ANNOTATION_EXECADDR "org.riscos.execaddr"
 #define ORAS_ANNOTATION_ATTR "org.riscos.attr"
 #define ORAS_ANNOTATION_FORMAT "org.riscos.artifact.format"
+#define ORAS_ANNOTATION_SOURCE "org.opencontainers.image.source"
 
 typedef struct oras_annotation_s
 {

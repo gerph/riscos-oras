@@ -36,6 +36,12 @@ static const uint32_t sha256_constants[64] =
     0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U
 };
 
+/*************************************************** Gerph *********
+ Function:      sha256_transform
+ Description:   Process one 64-byte block, updating the running hash state
+ Parameters:    context-> the context whose block is to be processed
+ Returns:       none
+ ******************************************************************/
 static void sha256_transform(sha256_context_t *context)
 {
     uint32_t schedule[64];
@@ -43,6 +49,7 @@ static void sha256_transform(sha256_context_t *context)
     uint32_t t1, t2;
     int i;
 
+    /* Message schedule words are big-endian, regardless of host byte order */
     for (i = 0; i < 16; ++i)
     {
         schedule[i] = ((uint32_t)context->block[i * 4] << 24) |
@@ -114,6 +121,9 @@ void sha256_update(sha256_context_t *context,
         uint32_t add_lo;
         uint32_t old_lo;
 
+        /* 64-bit bit-count is tracked as two 32-bit halves; detect overflow
+           of the low half (wrap below its previous value) to carry into
+           the high half, and fold in bits shifted out of "length << 3" */
         add_lo = (uint32_t)(length << 3);
         old_lo = context->bit_count_lo;
         context->bit_count_lo += add_lo;
@@ -146,6 +156,10 @@ void sha256_final(sha256_context_t *context, unsigned char digest[32])
 {
     int i;
 
+    /* Append the mandatory single '1' bit (as byte 0x80), then zero-pad.
+       If there isn't room left in this block for the 8-byte length, pad
+       to a full block, transform it, and continue padding into the next
+       block before the length is appended */
     context->block[context->block_used++] = 0x80;
     if (context->block_used > 56)
     {
@@ -160,6 +174,7 @@ void sha256_final(sha256_context_t *context, unsigned char digest[32])
     {
         context->block[context->block_used++] = 0;
     }
+    /* Length is appended as a big-endian 64-bit bit-count */
     context->block[context->block_used++] = (unsigned char)(context->bit_count_hi >> 24);
     context->block[context->block_used++] = (unsigned char)(context->bit_count_hi >> 16);
     context->block[context->block_used++] = (unsigned char)(context->bit_count_hi >> 8);

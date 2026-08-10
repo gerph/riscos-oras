@@ -1,0 +1,272 @@
+<?xml version="1.0"?>
+<!DOCTYPE riscos-prm PUBLIC "-//Gerph//DTD PRM documentation 1.03//EN"
+                            "http://gerph.org/dtd/103/prm.dtd">
+<riscos-prm>
+<chapter title="ORAS">
+<section title="Introduction and Overview">
+<p>
+ORAS is a command-line client for OCI registries. It exchanges RISC OS files
+as OCI fileset artifacts, allowing a group of files to be published to and
+retrieved from a registry without losing recognised RISC OS metadata.
+</p>
+<p>
+The URLFetcher modules are required to use ORAS. They provide the HTTP and
+HTTPS transport used to communicate with an OCI registry. ORAS supports
+anonymous access to public registries and standard Basic and Bearer challenge
+authentication. Credentials are stored in Docker-compatible form in the file
+named by <userinput>&lt;ORASAuthentication$Write&gt;</userinput>. That file is
+not encrypted and should be protected with normal file access controls.
+</p>
+<p>
+An OCI reference has the form
+<userinput>registry.example.net/repository:tag</userinput>. The registry host
+is mandatory. A tag is optional and defaults to <userinput>latest</userinput>;
+a digest selector may be used in place of a tag, for example
+<userinput>registry.example.net/repository@sha256:...</userinput>.
+</p>
+</section>
+
+<section title="Technical Details">
+<p>
+ORAS filesets use an OCI image manifest with artifact type
+<userinput>application/vnd.riscos.fileset.v1</userinput> and the manifest
+annotation <userinput>org.riscos.artifact.format = fileset-v1</userinput>.
+Each layer represents exactly one file; its blob is the unmodified file
+contents with media type <userinput>application/riscos</userinput>. Where the
+metadata is available, the layer media type includes its registered
+<userinput>name</userinput>, <userinput>load</userinput>,
+<userinput>exec</userinput> and <userinput>access</userinput> parameters. The
+numeric filetype is encoded in the <userinput>,xyz</userinput> suffix of the
+<userinput>name</userinput> parameter. Its
+<userinput>org.opencontainers.image.title</userinput> annotation is a portable
+relative output path. The accompanying <userinput>org.riscos.filename</userinput>
+annotation preserves the native RISC OS leaf name, including a suffix such as
+<userinput>/xml</userinput>.
+</p>
+<p>
+When requested with <userinput>--source</userinput>, published manifests include
+the OCI source annotation <userinput>org.opencontainers.image.source</userinput>.
+The shorthand <userinput>github:owner/repository</userinput> expands to the
+corresponding GitHub repository URI. No source annotation is added by default.
+</p>
+<p>
+When pushing, ORAS records any available file type, load address, execution
+address and attributes in the layer annotations
+<userinput>org.riscos.filetype</userinput>,
+<userinput>org.riscos.loadaddr</userinput>,
+<userinput>org.riscos.execaddr</userinput> and
+<userinput>org.riscos.attr</userinput>. When pulling, it creates parent
+directories, writes every blob, and then applies the recognised metadata.
+Absolute paths, empty path components, <userinput>.</userinput> and
+<userinput>..</userinput> components are rejected to prevent writing outside
+the requested output directory.
+</p>
+<p>
+Push arguments must be files, not directories. The stored output name is the
+RISC OS leaf name of each supplied path, so each push must have distinct leaf
+names. For example, <userinput>prminxml.oras/xml</userinput> is stored with
+native name <userinput>oras/xml</userinput> and portable title
+<userinput>oras.xml</userinput>.
+Directory prefixes are not yet preserved, so
+<userinput>aif26.oras</userinput>, <userinput>aif32.oras</userinput> and
+<userinput>aif64.oras</userinput> all collide as <userinput>oras</userinput>.
+Give such files distinct leaf names before pushing them together.
+An OCI index can be pulled when it contains exactly one manifest; an index
+with multiple candidates cannot currently be selected from the command line.
+</p>
+</section>
+
+<section title="*Commands">
+<command-definition name="oras"
+                    description="Uses OCI registry artifacts from RISC OS">
+<syntax>
+ <userreplace>operation</userreplace>
+</syntax>
+<parameter name="operation">
+One of the operations described below.
+</parameter>
+<use>
+<p>
+Invoking <command>*oras</command> without a valid operation displays the
+available command syntax. The commands report an error when the registry does
+not accept the request or returns an unsuccessful HTTP status.
+</p>
+</use>
+</command-definition>
+
+<command-definition name="oras pull"
+                    description="Retrieves a RISC OS fileset artifact">
+<syntax>
+ pull <userreplace>reference</userreplace>
+ <optional><userreplace>directory</userreplace></optional>
+</syntax>
+<parameter name="reference">The OCI artifact reference to retrieve.</parameter>
+<parameter name="directory">
+The destination directory. It defaults to the current directory.
+</parameter>
+<use>
+<p>
+Retrieves the manifest and each of its file layers. Files are recreated below
+the destination directory, with parent directories and recognised RISC OS
+metadata restored. Unsafe stored paths and duplicate output paths are refused.
+</p>
+</use>
+<example>
+<command>*oras pull registry.example.net/charles/demo:1.0 Work.Demo</command>
+</example>
+</command-definition>
+
+<command-definition name="oras push"
+                    description="Publishes files as a RISC OS fileset artifact">
+<syntax>
+ push <optional><userreplace>--source</userreplace> <userreplace>uri</userreplace></optional>
+ <userreplace>reference</userreplace> <userreplace>path</userreplace>...
+</syntax>
+<parameter name="reference">The OCI artifact reference to publish.</parameter>
+<parameter name="path">A source file to include in the fileset.</parameter>
+<parameter name="uri">An OCI source URI, or github:owner/repository.</parameter>
+<use>
+<p>
+Uploads each source file as a separate <userinput>application/riscos</userinput>
+OCI blob, records the file metadata both as media type parameters and OCI
+annotations where available, and publishes the fileset manifest. Directories
+are not accepted; provide every file explicitly.
+The optional source URI is recorded as org.opencontainers.image.source; it is
+not inferred from the target registry or repository.
+</p>
+</use>
+<example>
+<command>*oras push --source github:gerph/riscos-oras registry.example.net/charles/demo:1.0 Apps.Demo,ff8 Docs.ReadMe,fff</command>
+</example>
+</command-definition>
+
+<command-definition name="oras manifest fetch"
+                    description="Retrieves raw OCI manifest JSON">
+<syntax>
+ manifest fetch <optional><userreplace>--pretty</userreplace></optional>
+ <userreplace>reference</userreplace>
+ <optional><userreplace>file</userreplace></optional>
+</syntax>
+<parameter name="reference">The OCI manifest reference to retrieve.</parameter>
+<parameter name="file">Optional destination file for the JSON.</parameter>
+<use><p>
+Writes the manifest JSON to the optional file, or to standard output with a
+trailing newline. The optional <userinput>--pretty</userinput> switch formats
+the JSON for human reading before writing it.
+</p></use>
+<example>
+<command>*oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff</command>
+</example>
+<example>
+<command>*oras manifest fetch --pretty registry.example.net/charles/demo:1.0</command>
+</example>
+</command-definition>
+
+<command-definition name="oras blob fetch"
+                    description="Retrieves one OCI blob">
+<syntax>
+ blob fetch <userreplace>reference</userreplace> <userreplace>digest</userreplace>
+ <optional><userreplace>file</userreplace></optional>
+</syntax>
+<parameter name="reference">An OCI reference identifying the registry and repository.</parameter>
+<parameter name="digest">The blob digest, such as <userinput>sha256:...</userinput>.</parameter>
+<parameter name="file">Optional destination file for the blob.</parameter>
+<use><p>Writes the blob bytes to the optional file, or to standard output.</p></use>
+<example>
+<command>*oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff</command>
+</example>
+</command-definition>
+
+<command-definition name="oras tags"
+                    description="Lists tags in an OCI repository">
+<syntax>
+ tags <userreplace>repository</userreplace>
+</syntax>
+<parameter name="repository">An OCI registry host and repository path.</parameter>
+<use><p>Lists the repository tags, normally with one tag on each output line.</p></use>
+<example>
+<command>*oras tags registry.example.net/charles/demo</command>
+</example>
+</command-definition>
+
+<command-definition name="oras login"
+                    description="Stores a registry login credential">
+<syntax> login <userreplace>registry</userreplace> <userreplace>username</userreplace> </syntax>
+<parameter name="registry">The exact registry host, optionally including its port.</parameter>
+<parameter name="username">The user name to store.</parameter>
+<use><p>Prompts for a non-echoed secret and stores a Docker-compatible
+<userinput>auths</userinput> entry. The credential file is not encrypted.</p></use>
+<example><command>*oras login ghcr.io gerph</command></example>
+</command-definition>
+
+<command-definition name="oras logout"
+                    description="Removes a registry login credential">
+<syntax> logout <userreplace>registry</userreplace> </syntax>
+<parameter name="registry">The exact registry host, optionally including its port.</parameter>
+<use><p>Removes only the matching credential entry from the configured credential file.</p></use>
+</command-definition>
+
+<command-definition name="oras --self-test"
+                    description="Runs local ORAS self-tests">
+<syntax> --self-test </syntax>
+<use><p>
+Runs non-network checks for reference parsing, fileset metadata, and safe file
+extraction. A successful run prints <systemoutput>All self-tests passed</systemoutput>.
+</p></use>
+</command-definition>
+</section>
+
+<section title="Examples">
+<subsection title="Publishing and retrieving a fileset">
+<p>
+This example publishes two files, then recreates them under a destination
+directory. The destination receives the content and recognised metadata stored
+in the artifact.
+</p>
+<p><extended-example type="pseudo">
+*oras push registry.example.net/charles/demo:1.0 Apps.Demo,ff8 Docs.ReadMe,fff
+*oras pull registry.example.net/charles/demo:1.0 Work.Demo
+</extended-example></p>
+</subsection>
+<subsection title="Inspecting a published artifact">
+<p>
+Fetch the manifest before retrieving a specific blob. The manifest supplies
+the digest and metadata for each file layer.
+</p>
+<p><extended-example type="pseudo">
+*oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff
+*oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff
+*oras tags registry.example.net/charles/demo
+</extended-example></p>
+</subsection>
+<subsection title="Publishing to and retrieving from GHCR">
+<p>
+Log in once for the registry, then use the GitHub shorthand to associate only
+this artifact with its source repository. Pulling restores the native RISC OS
+filename and recognised metadata below the chosen destination.
+</p>
+<p><extended-example type="pseudo">
+*oras login ghcr.io gerph
+*oras push --source github:gerph/riscos-oras ghcr.io/gerph/riscos-oras:0.02 prminxml.oras/xml
+*oras pull ghcr.io/gerph/riscos-oras:0.02 Work.ORAS
+</extended-example></p>
+</subsection>
+</section>
+</chapter>
+
+<meta>
+ <maintainer><email name="Charles Ferguson" address="gerph@gerph.org" /></maintainer>
+ <disclaimer><p>&copy; Charles Ferguson, 2026.</p></disclaimer>
+ <history>
+  <revision number="3" author="Charles Ferguson" date="09 Aug 2026" title="Fileset usage examples">
+   <change>Documented formatted manifests, GHCR publishing, pulling, and duplicate leaf-name limits.</change>
+  </revision>
+  <revision number="2" author="Charles Ferguson" date="09 Aug 2026" title="Registry authentication">
+   <change>Documented Docker-compatible login credentials and authentication commands.</change>
+  </revision>
+  <revision number="1" author="Charles Ferguson" date="09 Aug 2026" title="Initial version">
+   <change>Documented ORAS and its command-line interface.</change>
+  </revision>
+ </history>
+</meta>
+</riscos-prm>

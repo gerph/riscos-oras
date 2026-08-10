@@ -56,6 +56,12 @@ def make_fixture_state() -> dict:
                 "manifests": {},
                 "blobs": {},
             },
+            "demo/basic": {
+                "tags": {"latest": manifest_digest},
+                "manifests": {manifest_digest: manifest_bytes},
+                "blobs": {blob_digest: blob},
+            },
+            "demo/bearer": {"tags": {}, "manifests": {}, "blobs": {}},
         },
         "uploads": {},
         "next_upload": 1,
@@ -101,12 +107,34 @@ class RegistryHandler(BaseHTTPRequestHandler):
                 return repo, action
         return None
 
+    def _authorised(self, repo: str) -> bool:
+        if repo == "demo/basic":
+            expected = "Basic dGVzdDpzZWNyZXQ="
+            if self.headers.get("Authorization") != expected:
+                self._send(401, headers={"WWW-Authenticate": 'Basic realm="fake"'})
+                return False
+        if repo == "demo/bearer":
+            if self.headers.get("Authorization") != "Bearer test-bearer":
+                realm = f"http://localhost:{self.server.server_port}/token"
+                self._send(401, headers={"WWW-Authenticate":
+                          f'Bearer realm="{realm}",service="fake",scope="repository:{repo}:pull,push"'})
+                return False
+        return True
+
     def do_GET(self):
+        if urllib.parse.urlparse(self.path).path == "/token":
+            if self.headers.get("Authorization") != "Basic dGVzdDpzZWNyZXQ=":
+                self._send(401)
+            else:
+                self._send(200, b'{"access_token":"test-bearer"}', {"Content-Type": "application/json"})
+            return
         split = self._split_v2_path()
         if split is None:
             self._send(404)
             return
         repo, action = split
+        if not self._authorised(repo):
+            return
         repo_state = self.state["repos"].get(repo)
         if repo_state is None:
             self._send(404)
@@ -145,6 +173,8 @@ class RegistryHandler(BaseHTTPRequestHandler):
             self._send(404)
             return
         repo, action = split
+        if not self._authorised(repo):
+            return
         if action != "/blobs/uploads/":
             self._send(404)
             return
@@ -159,10 +189,13 @@ class RegistryHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith("/upload/"):
             upload_id = parsed.path.split("/")[-1]
-            upload = self.state["uploads"].pop(upload_id, None)
+            upload = self.state["uploads"].get(upload_id)
             if upload is None:
                 self._send(404)
                 return
+            if not self._authorised(upload["repo"]):
+                return
+            self.state["uploads"].pop(upload_id)
             query = urllib.parse.parse_qs(parsed.query)
             digest = query.get("digest", [None])[0]
             body = self._read_body()
@@ -180,6 +213,8 @@ class RegistryHandler(BaseHTTPRequestHandler):
             self._send(404)
             return
         repo, action = split
+        if not self._authorised(repo):
+            return
         if not action.startswith("/manifests/"):
             self._send(404)
             return

@@ -7,6 +7,12 @@
 #ifndef SELFTEST_H
 #define SELFTEST_H
 
+/*************************************************** Gerph *********
+ Function:      oras_run_self_tests
+ Description:   Run the oras internal self-test suite
+ Parameters:    none
+ Returns:       0 if all tests passed, non-zero if any failed
+ ******************************************************************/
 int oras_run_self_tests(void);
 
 #endif
