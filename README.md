@@ -28,6 +28,7 @@ Run `*oras` with no arguments to display the command syntax.
 *oras tags <repository>
 *oras tag <reference> <tag>...
 *oras attach <reference> <path>...
+*oras discover <reference>
 *oras login <registry> <username>
 *oras logout <registry>
 ```
@@ -76,6 +77,9 @@ names, not full OCI references.
 `attach` publishes the supplied files as a RISC OS fileset attachment to an
 existing manifest. Attachments are stored through the OCI referrers tag scheme;
 repeated attachments retain the earlier referrer descriptors.
+
+`discover` lists the descriptors of fileset attachments for a manifest. It
+uses the OCI referrers tag scheme written by `attach`.
 
 `login` prompts for the secret without echoing it, then replaces the matching
 `auths.<registry>.auth` entry. `logout` removes only that registry entry.
@@ -130,6 +134,7 @@ Attach release notes to a published artifact:
 
 ```text
 *oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff
+*oras discover registry.example.net/charles/demo:1.0
 ```
 
 Log in before publishing to GHCR:

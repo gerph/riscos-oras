@@ -94,6 +94,17 @@ not accept the request or returns an unsuccessful HTTP status.
 </use>
 </command-definition>
 
+<command-definition name="oras discover"
+                    description="Lists OCI attachments for a manifest">
+<syntax> <userreplace>reference</userreplace> </syntax>
+<parameter name="reference">The OCI manifest whose attachments are listed.</parameter>
+<use><p>
+Lists attachment descriptors from the OCI referrers tag index, one per line,
+showing the digest, media type and size. A manifest without attachments
+produces no output.
+</p></use>
+</command-definition>
+
 <command-definition name="oras attach"
                     description="Attaches RISC OS files to an OCI manifest">
 <syntax>
@@ -274,6 +285,7 @@ the digest and metadata for each file layer.
 *oras tags registry.example.net/charles/demo
 *oras tag registry.example.net/charles/demo:1.0 stable
 *oras attach registry.example.net/charles/demo:1.0 Docs.ReleaseNotes,fff
+*oras discover registry.example.net/charles/demo:1.0
 </extended-example></p>
 </subsection>
 <subsection title="Publishing to and retrieving from GHCR">

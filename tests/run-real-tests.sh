@@ -91,6 +91,8 @@ PY
 )
 run_oras_text manifest fetch "localhost:$PORT/demo/pull:$ref_tag" >"referrers.json"
 python3 -c 'import json; assert len(json.load(open("referrers.json"))["manifests"]) == 2'
+run_oras_text discover "localhost:$PORT/demo/pull:latest" >"discovered.txt"
+test "$(wc -l <"discovered.txt")" -eq 2
 
 echo "-- pull fixture fileset"
 mkdir -p "pulled"
