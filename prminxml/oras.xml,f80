@@ -94,6 +94,41 @@ not accept the request or returns an unsuccessful HTTP status.
 </use>
 </command-definition>
 
+<command-definition name="oras manifest fetch-config"
+                    description="Retrieves an OCI manifest config blob">
+<syntax>
+ <userreplace>reference</userreplace>
+ <optional><userreplace>file</userreplace></optional>
+</syntax>
+<parameter name="reference">The OCI manifest whose config is retrieved.</parameter>
+<parameter name="file">Optional destination file for the config blob.</parameter>
+<use><p>
+Fetches the manifest, follows its config descriptor, and writes the config
+blob to the optional file or standard output. An index or manifest without a
+config descriptor is rejected.
+</p></use>
+<example>
+<command>*oras manifest fetch-config registry.example.net/charles/demo:1.0 Config,fff</command>
+</example>
+</command-definition>
+
+<command-definition name="oras manifest push"
+                    description="Publishes prepared OCI manifest JSON">
+<syntax>
+ <userreplace>reference</userreplace> <userreplace>file</userreplace>
+</syntax>
+<parameter name="reference">The OCI manifest reference to publish.</parameter>
+<parameter name="file">A JSON manifest or index to publish.</parameter>
+<use><p>
+Validates the JSON document and publishes its exact bytes using its declared
+media type. Blobs referenced by the document are not uploaded and must already
+exist in the target repository when required by the registry.
+</p></use>
+<example>
+<command>*oras manifest push registry.example.net/charles/demo:copy DemoManifest,fff</command>
+</example>
+</command-definition>
+
 <command-definition name="oras discover"
                     description="Lists OCI attachments for a manifest">
 <syntax> <userreplace>reference</userreplace> </syntax>
@@ -281,6 +316,8 @@ the digest and metadata for each file layer.
 </p>
 <p><extended-example type="pseudo">
 *oras manifest fetch registry.example.net/charles/demo:1.0 DemoManifest,fff
+*oras manifest fetch-config registry.example.net/charles/demo:1.0 Config,fff
+*oras manifest push registry.example.net/charles/demo:copy DemoManifest,fff
 *oras blob fetch registry.example.net/charles/demo:1.0 sha256:0123456789abcdef... Blob,fff
 *oras tags registry.example.net/charles/demo
 *oras tag registry.example.net/charles/demo:1.0 stable
@@ -307,6 +344,9 @@ filename and recognised metadata below the chosen destination.
  <maintainer><email name="Charles Ferguson" address="gerph@gerph.org" /></maintainer>
  <disclaimer><p>&copy; Charles Ferguson, 2026.</p></disclaimer>
  <history>
+  <revision number="5" author="Charles Ferguson" date="10 Aug 2026" title="Manifest operations">
+   <change>Documented config retrieval and publishing prepared manifest JSON.</change>
+  </revision>
   <revision number="4" author="Charles Ferguson" date="10 Aug 2026" title="Manifest tags">
    <change>Documented adding repository-local manifest tags without reuploading blobs.</change>
   </revision>

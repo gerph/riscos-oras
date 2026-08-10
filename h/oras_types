@@ -64,6 +64,8 @@ typedef struct oci_manifest_s
     size_t manifest_count;
     oci_descriptor_t subject;
     bool has_subject;
+    oci_descriptor_t config;
+    bool has_config;
 } oci_manifest_t;
 
 typedef struct riscos_file_meta_s

@@ -24,6 +24,8 @@ Run `*oras` with no arguments to display the command syntax.
 *oras pull <reference> [<directory>]
 *oras push [--source <uri|github:owner/repository>] <reference> <path>...
 *oras manifest fetch [--pretty] <reference> [<file>]
+*oras manifest fetch-config <reference> [<file>]
+*oras manifest push <reference> <file>
 *oras blob fetch <reference> <digest> [<file>]
 *oras tags <repository>
 *oras tag <reference> <tag>...
@@ -66,6 +68,11 @@ source repository. Source metadata is never added unless requested.
 `manifest fetch` writes the raw manifest JSON to standard output, ending it
 with a newline, or writes the unmodified JSON to its optional file argument.
 Pass `--pretty` to format the JSON for human reading before writing it.
+`manifest fetch-config` retrieves the blob named by a manifest's OCI config
+descriptor. It reports an error when the selected document is an index or a
+manifest without a config descriptor. `manifest push` validates a JSON
+manifest or index and publishes its exact bytes using its declared media type;
+it does not upload any blobs referenced by that document.
 `blob fetch` similarly writes a named blob. `tags` prints one tag per line
 when the registry returns a normal tag list.
 
@@ -111,6 +118,13 @@ Inspect the raw manifest, or print an indented version for people to read:
 
 The file form writes the registry's JSON unchanged. The screen form always
 ends with a newline; `--pretty` is the only option that reformats it.
+
+Retrieve a manifest's config blob, or publish prepared manifest JSON:
+
+```text
+*oras manifest fetch-config registry.example.net/charles/demo:1.0 Config,fff
+*oras manifest push registry.example.net/charles/demo:copy DemoManifest,fff
+```
 
 Obtain a blob whose digest was listed in the manifest:
 

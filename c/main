@@ -130,6 +130,8 @@ static void print_usage(void)
     printf("  *oras pull <reference> [<directory>]\n");
     printf("  *oras push [--source <uri|github:owner/repository>] <reference> <path>...\n");
     printf("  *oras manifest fetch [--pretty] <reference> [<file>]\n");
+    printf("  *oras manifest fetch-config <reference> [<file>]\n");
+    printf("  *oras manifest push <reference> <file>\n");
     printf("  *oras blob fetch <reference> <digest> [<file>]\n");
     printf("  *oras tags <repository>\n");
     printf("  *oras tag <reference> <tag>...\n");
@@ -344,6 +346,49 @@ static char *referrers_tag(const char *digest)
 }
 
 /*************************************************** Gerph *********
+ Function:      read_text_file
+ Description:   Read a complete text file into an allocated buffer
+ Parameters:    path-> file to read
+                text_out-> receives the allocated NUL-terminated text
+                error-> buffer to receive an error message
+                error_size = size of the error buffer
+ Returns:       1 on success, 0 on failure
+ ******************************************************************/
+static int read_text_file(const char *path,
+                          char **text_out,
+                          char *error,
+                          size_t error_size)
+{
+    FILE *fp;
+    long length;
+    char *text;
+
+    fp = fopen(path, "rb");
+    if (fp == NULL || fseek(fp, 0, SEEK_END) != 0 ||
+        (length = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0)
+    {
+        if (fp != NULL)
+        {
+            fclose(fp);
+        }
+        oras_set_error(error, error_size, "Unable to read '%s'", path);
+        return 0;
+    }
+    text = malloc((size_t)length + 1);
+    if (text == NULL || fread(text, 1, (size_t)length, fp) != (size_t)length)
+    {
+        fclose(fp);
+        free(text);
+        oras_set_error(error, error_size, "Unable to read '%s'", path);
+        return 0;
+    }
+    fclose(fp);
+    text[length] = '\0';
+    *text_out = text;
+    return 1;
+}
+
+/*************************************************** Gerph *********
  Function:      source_uri_from_option
  Description:   Expand a source option, including the GitHub shorthand
  Parameters:    option-> source URI or github:owner/repository shorthand
@@ -397,7 +442,8 @@ static int source_uri_from_option(const char *option,
 /*************************************************** Gerph *********
  Function:      main
  Description:   Entry point for the oras command line tool; dispatches to
-                the pull/push/manifest/blob/tags/tag/self-test operations
+                the pull/push/manifest/blob/tags/tag/attach/discover and
+                self-test operations
                 according to the command line arguments
  Parameters:    argc = number of command line arguments
                 argv-> array of argument strings
@@ -484,6 +530,89 @@ int main(int argc, char *argv[])
                      output_path,
                      1);
         free(json);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "manifest") == 0 && argc >= 4 &&
+        strcmp(argv[2], "fetch-config") == 0)
+    {
+        oci_reference_t reference;
+        oci_manifest_t manifest;
+        char *json;
+        unsigned char *data;
+        size_t size;
+
+        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+            !oci_registry_fetch_manifest(&reference, &json, error, sizeof(error)) ||
+            !oci_manifest_parse(json, &manifest, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        free(json);
+        if (!manifest.has_config || manifest.config.digest == NULL ||
+            manifest.config.digest[0] == '\0')
+        {
+            fprintf(stderr, "Manifest has no config descriptor\n");
+            oras_free_manifest(&manifest);
+            oras_free_reference(&reference);
+            exit(EXIT_FAILURE);
+        }
+        if (!oci_registry_fetch_blob(&reference,
+                                     manifest.config.digest,
+                                     &data,
+                                     &size,
+                                     error,
+                                     sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            oras_free_manifest(&manifest);
+            oras_free_reference(&reference);
+            exit(EXIT_FAILURE);
+        }
+        write_output(data, size, argc >= 5 ? argv[4] : NULL, 0);
+        free(data);
+        oras_free_manifest(&manifest);
+        oras_free_reference(&reference);
+        exit(EXIT_SUCCESS);
+    }
+    if (strcmp(argv[1], "manifest") == 0 && argc == 5 &&
+        strcmp(argv[2], "push") == 0)
+    {
+        oci_reference_t reference;
+        oci_manifest_t manifest;
+        char *json;
+
+        if (!oci_parse_reference(argv[3], &reference, error, sizeof(error)) ||
+            !read_text_file(argv[4], &json, error, sizeof(error)) ||
+            !oci_manifest_parse(json, &manifest, error, sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            exit(EXIT_FAILURE);
+        }
+        if (manifest.media_type == NULL)
+        {
+            fprintf(stderr, "Manifest JSON has no mediaType\n");
+            free(json);
+            oras_free_manifest(&manifest);
+            oras_free_reference(&reference);
+            exit(EXIT_FAILURE);
+        }
+        if (!oci_registry_push_manifest_as(&reference,
+                                           json,
+                                           manifest.media_type,
+                                           error,
+                                           sizeof(error)))
+        {
+            fprintf(stderr, "%s\n", error);
+            free(json);
+            oras_free_manifest(&manifest);
+            oras_free_reference(&reference);
+            exit(EXIT_FAILURE);
+        }
+        printf("Manifest pushed to %s/%s\n", reference.registry, reference.repository);
+        free(json);
+        oras_free_manifest(&manifest);
         oras_free_reference(&reference);
         exit(EXIT_SUCCESS);
     }

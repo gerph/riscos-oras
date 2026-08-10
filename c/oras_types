@@ -163,6 +163,10 @@ void oras_free_manifest(oci_manifest_t *manifest)
     {
         oras_free_descriptor(&manifest->subject);
     }
+    if (manifest->has_config)
+    {
+        oras_free_descriptor(&manifest->config);
+    }
     memset(manifest, 0, sizeof(*manifest));
 }
 

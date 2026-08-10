@@ -62,6 +62,16 @@ echo "-- formatted manifest fetch against fixture"
 run_oras_text manifest fetch --pretty "localhost:$PORT/demo/pull:latest" >"fixture-manifest-pretty.json"
 grep -qx '{' "fixture-manifest-pretty.json"
 
+echo "-- config fetch against fixture"
+run_oras_blob_to_file "fixture-config.json" manifest fetch-config \
+    "localhost:$PORT/demo/pull:latest"
+grep -q '"architecture":"arm"' "fixture-config.json"
+
+echo "-- raw manifest push preserves the document"
+run_oras_text manifest push "localhost:$PORT/demo/pull:copied" "fixture-manifest/json"
+run_oras_text manifest fetch "localhost:$PORT/demo/pull:copied" >"copied-manifest.json"
+cmp "fixture-manifest.json" "copied-manifest.json"
+
 echo "-- blob fetch against fixture"
 run_oras blob fetch "localhost:$PORT/demo/pull:latest" \
     "sha256:62a72c8aa30dedb7aa393331a43175426b5d3af694205ad1a33973716e8a75ed" \

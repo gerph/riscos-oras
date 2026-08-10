@@ -24,6 +24,7 @@ typedef struct test_blob_s
 } test_blob_t;
 
 static int test_failures = 0;
+static int test_skips = 0;
 
 #define EXPECT(cond, text) \
     do { \
@@ -177,6 +178,13 @@ static void test_manifest_and_paths(void)
         "\"platform\":{\"os\":\"riscos\",\"architecture\":\"arm\"}},"
         "{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:two\",\"size\":1,"
         "\"platform\":{\"os\":\"linux\",\"architecture\":\"amd64\"}}]}";
+    const char *config_json =
+        "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\","
+        "\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\","
+        "\"digest\":\"sha256:config\",\"size\":12},\"layers\":[]}";
+    char *written;
+
+    written = NULL;
 
     EXPECT(!riscos_fileset_sanitise_path("../bad", &safe, error, sizeof(error)),
            "reject traversal");
@@ -192,6 +200,17 @@ static void test_manifest_and_paths(void)
            "platform selection");
     EXPECT(strcmp(selected.digest, "sha256:one") == 0, "selected digest");
     oras_free_descriptor(&selected);
+    oras_free_manifest(&parsed);
+
+    EXPECT(oci_manifest_parse(config_json, &parsed, error, sizeof(error)),
+           "parse config descriptor");
+    EXPECT(parsed.has_config && strcmp(parsed.config.digest, "sha256:config") == 0,
+           "config descriptor digest");
+    EXPECT(oci_manifest_write(&parsed, &written, error, sizeof(error)),
+           "write config descriptor");
+    EXPECT(written != NULL && strstr(written, "\"config\"") != NULL,
+           "config descriptor serialised");
+    free(written);
     oras_free_manifest(&parsed);
 }
 
@@ -350,14 +369,27 @@ static void test_fileset_plan_and_extract(void)
 int oras_run_self_tests(void)
 {
     test_failures = 0;
+    test_skips = 0;
     test_reference_parsing();
     test_metadata_annotations();
     test_manifest_and_paths();
     test_auth_helpers();
+#ifdef __riscos64
+    printf("SKIP: fileset filesystem tests are unavailable on 64-bit RISC OS\n");
+    ++test_skips;
+#else
     test_fileset_plan_and_extract();
+#endif
     if (test_failures == 0)
     {
-        printf("All self-tests passed\n");
+        if (test_skips == 0)
+        {
+            printf("All self-tests passed\n");
+        }
+        else
+        {
+            printf("All self-tests passed (%d skipped)\n", test_skips);
+        }
         return 0;
     }
     printf("%d self-test(s) failed\n", test_failures);

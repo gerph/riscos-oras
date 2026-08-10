@@ -228,6 +228,7 @@ int oci_manifest_parse(const char *json,
     cJSON *annotations;
     cJSON *item;
     cJSON *subject;
+    cJSON *config;
     int index;
 
     memset(manifest, 0, sizeof(*manifest));
@@ -286,6 +287,17 @@ int oci_manifest_parse(const char *json,
             return 0;
         }
         manifest->has_subject = true;
+    }
+    config = cJSON_GetObjectItemCaseSensitive(root, "config");
+    if (cJSON_IsObject(config))
+    {
+        if (!parse_descriptor(config, &manifest->config, error, error_size))
+        {
+            cJSON_Delete(root);
+            oras_free_manifest(manifest);
+            return 0;
+        }
+        manifest->has_config = true;
     }
     layers = cJSON_GetObjectItemCaseSensitive(root, "layers");
     if (cJSON_IsArray(layers))
@@ -375,6 +387,17 @@ int oci_manifest_write(const oci_manifest_t *manifest,
             return 0;
         }
         cJSON_AddItemToObject(root, "subject", item);
+    }
+    if (manifest->has_config)
+    {
+        item = descriptor_to_json(&manifest->config);
+        if (item == NULL)
+        {
+            cJSON_Delete(root);
+            oras_set_error(error, error_size, "No memory for config JSON");
+            return 0;
+        }
+        cJSON_AddItemToObject(root, "config", item);
     }
     if (manifest->annotation_count != 0)
     {
