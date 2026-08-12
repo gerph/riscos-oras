@@ -1,6 +1,6 @@
 /*******************************************************************
  * File:        selftest
- * Purpose:     oras self-test entry point
+ * Purpose:     ORAS library self-test program
  * Author:      Gerph
  ******************************************************************/
 
@@ -8,12 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "oras_types.h"
-#include "oci_manifest.h"
-#include "riscos_metadata.h"
-#include "riscos_fileset.h"
-#include "oci_auth.h"
-#include "selftest.h"
+#include "oras.h"
 #include "os.h"
 
 typedef struct test_blob_s
@@ -366,7 +361,13 @@ static void test_fileset_plan_and_extract(void)
     riscos_fileset_free_entries(entries, entry_count);
 }
 
-int oras_run_self_tests(void)
+/*************************************************** Gerph *********
+ Function:      main
+ Description:   Run the ORAS library self-test suite
+ Parameters:    none
+ Returns:       0 if all tests passed, non-zero if any failed
+ ******************************************************************/
+int main(void)
 {
     test_failures = 0;
     test_skips = 0;

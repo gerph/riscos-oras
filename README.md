@@ -174,13 +174,23 @@ destination, including its filetype and other recognised metadata:
 
 For the artifact above, the restored file is `Work.ORAS.oras/xml`.
 
-The `--self-test` command performs local, non-network checks of reference
-handling, fileset metadata and safe extraction paths.
+The local library tests perform non-network checks of reference handling,
+fileset metadata and safe extraction paths.
 
 ```text
-*oras --self-test
+riscos-amu -f MakefileTest,fe1 test
 All self-tests passed
 ```
+
+To build the reusable library and export its headers and archive, use:
+
+```text
+riscos-amu -f MakefileLib,fe1 export
+```
+
+Consumers include `C:ORAS.h.oras` and link with `C:ORAS.o.libORAS-32`
+(or the matching architecture variant). The `oras` command is built
+independently from `Makefile,fe1` and links against that library.
 
 For the complete RISC OS reference manual, see
 [`prminxml/oras.xml,f80`](prminxml/oras.xml,f80).

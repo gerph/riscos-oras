@@ -1,0 +1,73 @@
+#!/usr/bin/env riscos-amu -f
+# Makefile for ORAS
+#
+
+#
+# Program specific options:
+#
+COMPONENT  = ORAS
+
+# The OS veneer is for applications and depends on the application modhead.
+NOMODULELIBS = yes
+
+# Specifies additional targets for startup
+#INITTARGET = inittarget
+
+# Specifies additional targets for clean
+#CLEANTARGET = cleantarget
+
+# Files to export as part of export_hdr or export_libs
+EXPORTS    = ${EXP_LIB}.${COMPONENT}.h.oras \
+             ${EXP_LIB}.${COMPONENT}.h.oras_types \
+             ${EXP_LIB}.${COMPONENT}.h.oci_auth \
+             ${EXP_LIB}.${COMPONENT}.h.oci_manifest \
+             ${EXP_LIB}.${COMPONENT}.h.oci_registry \
+             ${EXP_LIB}.${COMPONENT}.h.os \
+             ${EXP_LIB}.${COMPONENT}.h.riscos_fileset \
+             ${EXP_LIB}.${COMPONENT}.h.riscos_metadata \
+             ${EXP_LIB}.${COMPONENT}.h.sha256 \
+             ${EXP_LIB}.${COMPONENT}.h.url_fetch
+
+# Comma-separated list of paths to use for includes, such as:
+#	C:LibName.
+INCLUDES   =
+
+# Space separated list of defines to set, eg -DDEBUG
+CDEFINES   = -DSIMPLE_APP
+
+# Objects to build, using the format o.<name> (will be varied for build type)
+OBJS       = o.oras_types \
+             o.oci_auth \
+             o.oci_manifest \
+             o.oci_registry \
+             o.os \
+             o.riscos_fileset \
+             o.riscos_metadata \
+             o.sha256 \
+             o.url_fetch
+
+include LibExport
+
+${EXP_LIB}.${COMPONENT}.h.oras: h.oras
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.oras_types: h.oras_types
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.oci_auth: h.oci_auth
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.oci_manifest: h.oci_manifest
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.oci_registry: h.oci_registry
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.os: h.os
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.riscos_fileset: h.riscos_fileset
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.riscos_metadata: h.riscos_metadata
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.sha256: h.sha256
+	${CP} $? $@ ${CPFLAGS}
+${EXP_LIB}.${COMPONENT}.h.url_fetch: h.url_fetch
+	${CP} $? $@ ${CPFLAGS}
+
+#---------------------------------------------------------------------------
+# Dynamic dependencies:

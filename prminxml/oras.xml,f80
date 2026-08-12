@@ -288,13 +288,6 @@ full OCI references.
 <use><p>Removes only the matching credential entry from the configured credential file.</p></use>
 </command-definition>
 
-<command-definition name="oras --self-test"
-                    description="Runs local ORAS self-tests">
-<use><p>
-Runs non-network checks for reference parsing, fileset metadata, and safe file
-extraction. A successful run prints <systemoutput>All self-tests passed</systemoutput>.
-</p></use>
-</command-definition>
 </section>
 
 <section title="Examples">

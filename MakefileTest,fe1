@@ -1,0 +1,29 @@
+#!/usr/bin/env riscos-amu -f
+# Makefile for the ORAS library tests
+#
+
+COMPONENT  = oras-test
+TYPE       = aif
+PREINCLUDES = C:ORAS.h
+LIBS       = C:ORAS.o.libORAS \
+             C:URL.o.libURLFetch \
+             C:cJSON.o.libcJSON \
+             ${CLIB}
+OBJS       = o.selftest
+INITTARGET = library
+
+ifeq (${BUILD64},1)
+LIBRARY_BUILD = BUILD64=1
+endif
+
+include LibraryCommand
+
+library:
+	riscos-amu -f MakefileLib,fe1 export ${LIBRARY_BUILD}
+
+.PHONY: test
+test: all
+	riscos-build-run aif32/oras-test,ff8 --command "oras-test"
+
+#---------------------------------------------------------------------------
+# Dynamic dependencies:

@@ -1,0 +1,19 @@
+/*******************************************************************
+ * File:        oras
+ * Purpose:     Public interface to the ORAS OCI registry library
+ * Author:      Gerph
+ ******************************************************************/
+
+#ifndef ORAS_H
+#define ORAS_H
+
+#include "oras_types.h"
+#include "oci_auth.h"
+#include "oci_manifest.h"
+#include "oci_registry.h"
+#include "riscos_fileset.h"
+#include "riscos_metadata.h"
+#include "sha256.h"
+#include "url_fetch.h"
+
+#endif

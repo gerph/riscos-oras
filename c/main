@@ -10,13 +10,7 @@
 
 #include "cJSON/cJSON.h"
 
-#include "oras_types.h"
-#include "oci_manifest.h"
-#include "oci_registry.h"
-#include "oci_auth.h"
-#include "riscos_fileset.h"
-#include "sha256.h"
-#include "selftest.h"
+#include "oras.h"
 #include "os.h"
 
 #include "VersionNum"
@@ -139,7 +133,6 @@ static void print_usage(void)
     printf("  *oras discover <reference>\n");
     printf("  *oras login <registry> <username>\n");
     printf("  *oras logout <registry>\n");
-    printf("  *oras --self-test\n");
 }
 
 /*************************************************** Gerph *********
@@ -442,9 +435,8 @@ static int source_uri_from_option(const char *option,
 /*************************************************** Gerph *********
  Function:      main
  Description:   Entry point for the oras command line tool; dispatches to
-                the pull/push/manifest/blob/tags/tag/attach/discover and
-                self-test operations
-                according to the command line arguments
+                the pull/push/manifest/blob/tags/tag/attach/discover
+                operations according to the command line arguments
  Parameters:    argc = number of command line arguments
                 argv-> array of argument strings
  Returns:       does not return; exits with EXIT_SUCCESS or EXIT_FAILURE
@@ -453,10 +445,6 @@ int main(int argc, char *argv[])
 {
     char error[256];
 
-    if (argc == 2 && strcmp(argv[1], "--self-test") == 0)
-    {
-        return oras_run_self_tests();
-    }
     if (argc < 2)
     {
         print_usage();
