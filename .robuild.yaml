@@ -26,15 +26,33 @@ jobs:
     # The build will terminate if any command returns a non-0 return code or an error.
     script:
 
-      # Build component
+      # Build library
       - echo
-      - echo *** Build the component ***
-      - amu -f Makefile install INSTDIR=Install
+      - echo *** Build the library ***
+      - amu -f MakefileLib export
 
-      # Test the command
+      # Test the library
       - echo
-      - echo *** Run command ***
-      - aif32.oras --self-test
+      - echo *** Build and run library tests ***
+      - amu -f MakefileTest
+      - aif32.oras-test
+
+      # Build command-line tool
+      - echo
+      - echo *** Build command-line tool ***
+      - amu -f Makefile
+
+      # Stage all distributable components for the returned archive.
+      - echo
+      - echo *** Copying results ***
+      - cdir Install
+      - cdir Install.aif32
+      - Copy aif32.oras-test Install.aif32.oras-test ~CFVR
+      - Copy aif32.oras Install.aif32.oras ~CFVR
+      - cdir Install.Lib
+      - Copy <Exports$Dir>.Lib.ORAS Install.Lib.ORAS ~CVRF
+      - cdir Install.HTML
+      - Copy documentation Install.HTML ~CFVR
 
       # Done!
       - echo

@@ -99,6 +99,6 @@ Deferred for later:
 
 ## Test intent
 
-The project has a local `--self-test` path for non-network behaviour and a
-local fake-registry smoke test for anonymous, Basic and Bearer workflows. Do
-not add live registry credentials to CI.
+The project has a `MakefileTest,fe1` target for non-network library behaviour
+and a local fake-registry smoke test for anonymous, Basic and Bearer workflows.
+Do not add live registry credentials to CI.
