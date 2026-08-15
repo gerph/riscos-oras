@@ -269,13 +269,23 @@ static void test_fileset_plan_and_extract(void)
     test_blob_t blobs[2];
     unsigned char text_data[] = "hello\n";
 
+#ifdef __riscos
     ensure_dir("TestOras");
     ensure_dir("TestOras.Input");
     fp = fopen("TestOras.Input.readme,fff", "wb");
+#else
+    ensure_dir("TestOras");
+    ensure_dir("TestOras/Input");
+    fp = fopen("TestOras/Input/readme,fff", "wb");
+#endif
     fwrite(text_data, 1, sizeof(text_data) - 1, fp);
     fclose(fp);
 
+#ifdef __riscos
     paths[0] = "TestOras.Input.readme,fff";
+#else
+    paths[0] = "TestOras/Input/readme,fff";
+#endif
     EXPECT(riscos_fileset_plan(paths, 1, &entries, &entry_count, error, sizeof(error)),
            "plan fileset");
     EXPECT(entry_count == 1, "one planned file");
@@ -329,6 +339,7 @@ static void test_fileset_plan_and_extract(void)
     blobs[1].data = NULL;
     blobs[1].size = 0;
 
+#ifdef __riscos
     ensure_dir("TestOras.Output");
     EXPECT(riscos_fileset_extract(&manifest,
                                   "TestOras.Output",
@@ -337,11 +348,25 @@ static void test_fileset_plan_and_extract(void)
                                   error,
                                   sizeof(error)),
            "extract fileset");
+#else
+    ensure_dir("TestOras/Output");
+    EXPECT(riscos_fileset_extract(&manifest,
+                                  "TestOras/Output",
+                                  test_fetch_blob,
+                                  blobs,
+                                  error,
+                                  sizeof(error)),
+           "extract fileset");
+#endif
     if (test_failures != 0)
     {
         printf("extract error: %s\n", error);
     }
+#ifdef __riscos
     fp = fopen("TestOras.Output.readme,fff", "rb");
+#else
+    fp = fopen("TestOras/Output/readme,fff", "rb");
+#endif
     EXPECT(fp != NULL, "extracted file exists");
     if (fp != NULL)
     {
@@ -353,10 +378,15 @@ static void test_fileset_plan_and_extract(void)
         EXPECT(count == sizeof(text_data) - 1, "extracted file size");
         EXPECT(memcmp(buffer, text_data, sizeof(text_data) - 1) == 0, "extracted file bytes");
     }
+#ifdef __riscos
     /* remove() takes native RISC OS pathnames ('.' separators), unlike the
        Unix-style ('/') paths accepted by fopen() above */
     remove("TestOras.Input.readme,fff");
     remove("TestOras.Output.readme,fff");
+#else
+    remove("TestOras/Input/readme,fff");
+    remove("TestOras/Output/readme,fff");
+#endif
     oras_free_manifest(&manifest);
     riscos_fileset_free_entries(entries, entry_count);
 }
