@@ -13,7 +13,49 @@
 #include "oras_types.h"
 #include "oci_auth.h"
 
+#ifdef __riscos
 #define ORAS_AUTH_FILE "<ORASAuthentication$Write>"
+#else
+#include <sys/stat.h>
+#include <sys/types.h>
+
+/*************************************************** Gerph *********
+ Function:      oras_auth_file_path
+ Description:   Determine the POSIX credential file path, creating its
+                containing directory if required. Honours
+                $XDG_CONFIG_HOME (defaulting to $HOME/.config) per the
+                XDG Base Directory specification.
+ Parameters:    none
+ Returns:       pointer to a static path buffer
+ ******************************************************************/
+static const char *oras_auth_file_path(void)
+{
+    static char path[1024];
+    char config_home[896];
+    const char *xdg;
+    const char *home;
+
+    xdg = getenv("XDG_CONFIG_HOME");
+    if (xdg != NULL && xdg[0] != '\0')
+    {
+        snprintf(config_home, sizeof(config_home), "%s", xdg);
+    }
+    else
+    {
+        home = getenv("HOME");
+        if (home == NULL || home[0] == '\0')
+        {
+            home = ".";
+        }
+        snprintf(config_home, sizeof(config_home), "%s/.config", home);
+    }
+    snprintf(path, sizeof(path), "%s/oras", config_home);
+    mkdir(path, 0700);
+    snprintf(path, sizeof(path), "%s/oras/auth.json", config_home);
+    return path;
+}
+#define ORAS_AUTH_FILE oras_auth_file_path()
+#endif
 
 static const char base64_chars[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

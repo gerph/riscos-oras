@@ -14,6 +14,16 @@
 #include "riscos_fileset.h"
 #include "os.h"
 
+/* RISC OS paths join components with '.'; POSIX paths use '/'. Output
+   paths are built directly for the native filing system, so the
+   separator (and the leaf filename safety check below) must match
+   whichever platform we are compiled for. */
+#ifdef __riscos
+#define ORAS_PATH_SEP '.'
+#else
+#define ORAS_PATH_SEP '/'
+#endif
+
 static int append_entry(riscos_fileset_entry_t **entries,
                         size_t *entry_count,
                         const char *source_path,
@@ -296,7 +306,11 @@ int riscos_fileset_plan(const char *const *paths,
     entry_count = 0;
     for (i = 0; i < path_count; ++i)
     {
+#ifdef __riscos
         leaf = strrchr(paths[i], '.');
+#else
+        leaf = strrchr(paths[i], '/');
+#endif
         leaf = leaf == NULL ? paths[i] : leaf + 1;
         if (path_object_type(paths[i]) == 2)
         {
@@ -464,7 +478,7 @@ static int build_output_path(const char *directory,
             oras_set_error(error, error_size, "Output path is too long");
             return 0;
         }
-        output_path[output_length++] = '.';
+        output_path[output_length++] = ORAS_PATH_SEP;
         memcpy(output_path + output_length, component, component_length);
         output_length += component_length;
         output_path[output_length] = '\0';
@@ -502,18 +516,24 @@ static int build_native_output_path(const char *directory,
 
     directory_length = strlen(directory);
     filename_length = strlen(filename);
+#ifdef __riscos
     if (directory_length == 0 || filename_length == 0 ||
         strchr(filename, '.') != NULL || strchr(filename, ':') != NULL ||
         strchr(filename, '^') != NULL || filename[0] == '$' ||
         filename[0] == '@' || filename[0] == '\\' ||
         directory_length + 1 + filename_length >= output_path_size)
+#else
+    if (directory_length == 0 || filename_length == 0 ||
+        strchr(filename, '/') != NULL ||
+        directory_length + 1 + filename_length >= output_path_size)
+#endif
     {
         oras_set_error(error, error_size, "Unsafe RISC OS filename '%s'", filename);
         return 0;
     }
     strcpy(output_path, directory);
-    strcat(output_path, ".");
-    strcat(output_path, filename);
+    output_path[directory_length] = ORAS_PATH_SEP;
+    strcpy(output_path + directory_length + 1, filename);
     return 1;
 }
 

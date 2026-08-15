@@ -1,0 +1,4 @@
+*.o
+/oras
+/oras-selftest
+/include/cJSON/
